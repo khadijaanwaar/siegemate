@@ -21,6 +21,7 @@ import {
   PIECE_VALUE,
 } from "./types";
 import { AiClient } from "../ai/aiClient";
+import type { SavedGame } from "./persist";
 
 export interface StartOptions {
   mode: GameMode;
@@ -588,6 +589,11 @@ export class GameController extends Emitter<ControllerEvents> {
   }
 
   start(options: StartOptions): void {
+    this.begin(options, new Chess(), null);
+  }
+
+  /** A match from `chess` (a fresh game, or a replayed save) with the clocks full or as saved. */
+  private begin(options: StartOptions, chess: Chess, clockLeft: SavedGame["clock"] | null): void {
     this.generation += 1;
     this.ai.cancel();
     this.clearRematchTimer();
@@ -595,7 +601,7 @@ export class GameController extends Emitter<ControllerEvents> {
     this.paused = false;
     if (options.mode !== "demo" || this.options.mode !== "demo") this.demoRound = 1;
     this.options = options.mode === "demo" ? { ...options, demo: options.demo ?? DEFAULT_DEMO } : options;
-    this.chess = new Chess();
+    this.chess = chess;
     this.status = "playing";
     this.result = null;
     this.thinking = false;
@@ -605,8 +611,8 @@ export class GameController extends Emitter<ControllerEvents> {
     this.clock = {
       enabled: options.clockMinutes !== null,
       initialMs: ms,
-      whiteMs: ms,
-      blackMs: ms,
+      whiteMs: clockLeft ? Math.min(ms, clockLeft.whiteMs) : ms,
+      blackMs: clockLeft ? Math.min(ms, clockLeft.blackMs) : ms,
     };
     this.elapsed = { w: 0, b: 0 };
     this.timingSide = null;
@@ -615,6 +621,36 @@ export class GameController extends Emitter<ControllerEvents> {
     this.publish();
     this.startClock();
     void this.maybeRunEngine();
+  }
+
+  /** The match as it stands, for {@link resume} after a lost session. */
+  exportSave(): SavedGame {
+    return {
+      version: 1,
+      options: { ...this.options },
+      pgn: this.chess.pgn(),
+      fen: this.chess.fen(),
+      clock: { whiteMs: this.clock.whiteMs, blackMs: this.clock.blackMs },
+      savedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Stands a saved match back up: the moves are replayed into a fresh game and
+   * checked against the saved position, the clocks pick up where they were,
+   * and the scene rebuilds the board from it (the `reset` event). False, and
+   * nothing changed, when the save does not replay.
+   */
+  resume(save: SavedGame): boolean {
+    const chess = new Chess();
+    try {
+      chess.loadPgn(save.pgn);
+    } catch {
+      return false;
+    }
+    if (chess.fen() !== save.fen) return false;
+    this.begin(save.options, chess, save.clock);
+    return true;
   }
 
   stop(): void {
