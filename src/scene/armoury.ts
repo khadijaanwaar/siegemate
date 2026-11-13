@@ -41,11 +41,10 @@
  */
 
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import { ARM_SCULPTS } from "../assets/generated";
 import type { Faction } from "../core/types";
-import { loadGltf } from "./gltfQueue";
+import { createGltfLoader, loadGltf } from "./gltfQueue";
 import type { WeaponId } from "./weapons";
 
 /** How a sculpt's cross-section maps onto the prop's own axes. */
@@ -103,7 +102,7 @@ const RESTING_EMISSIVE = 0.12;
 /** Army tint the highlight glows in, matching the figures' own livery. */
 const LIVERY: Record<Faction, number> = { w: 0x223d75, b: 0x611710 };
 
-const loader = new GLTFLoader();
+const loader = createGltfLoader();
 const templates = new Map<WeaponId, ArmSculpt>();
 const jobs = new Map<WeaponId, Promise<void>>();
 

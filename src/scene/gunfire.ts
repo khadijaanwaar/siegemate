@@ -14,10 +14,10 @@
  */
 
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import type { Faction } from "../core/types";
 import { AMMUNITION, type AmmoKind, type AmmoSpec, disposeAmmunition, loadRound } from "./ammunition";
+import { createGltfLoader } from "./gltfQueue";
 import type { SpellLight } from "./spells";
 import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture, tracerTexture } from "./textures";
 import { TracerStreak } from "./tracer";
@@ -170,7 +170,7 @@ export function primeShotModel(source: ShotModelSource): Promise<void> {
   if (running) return running;
   const job = (async () => {
     try {
-      const gltf = await new GLTFLoader().loadAsync(source.url);
+      const gltf = await createGltfLoader().loadAsync(source.url);
       // Rotate the sculpt's own frame onto "nose along +Z, up along +Y", which is
       // the frame a shot orients along its line of travel. A directionless ball
       // has no reported front, so its own longest extent is taken as the nose.

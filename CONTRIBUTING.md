@@ -98,12 +98,17 @@ who has a clone.
 
 ## Assets
 
-Models and audio are referenced by URL in `src/assets/generated.ts`. When contributing new
-assets:
+Models, audio and painted cards are self-hosted under `public/assets/{models,audio,cards}/` and
+referenced in `src/assets/generated.ts` through `assetUrl("models", "<file>")` (never by a full
+URL; the build fails on a remote asset host). When contributing new assets:
 
-- Add them under `web/public/models/` or `web/public/audio/` and reference them with a
-  root-relative path.
-- Compress GLBs (`@gltf-transform/cli optimize … --compress draco --texture-compress webp`).
+- Add the entry to `generated.ts`, then run `npm run assets` (`tools/optimize-assets.mjs`). It
+  writes the Quest-ready copy: figures simplified to their triangle ceiling with the texture
+  re-baked, WebP textures, meshopt compression. Every `GLTFLoader` comes from
+  `createGltfLoader()` in `src/scene/gltfQueue.ts`, which carries the meshopt decoder.
+- `npm run build` runs `tools/check-assets.mjs` first: per-sculpt triangle ceilings, a 25 MiB
+  budget for `public/assets`, and no remote URLs in `src/`.
+- Commit the regenerated files under `public/assets/` on their own.
 - State the licence and the author of anything you did not make yourself in the pull request.
 
 ## Pull requests

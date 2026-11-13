@@ -10,9 +10,19 @@
  * limiting themselves to four downloads still burst eight.
  */
 
-import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export type LoadedGltf = Awaited<ReturnType<GLTFLoader["loadAsync"]>>;
+
+/**
+ * A loader for the game's GLBs. Every one of them is meshopt-compressed by
+ * `tools/optimize-assets.mjs`, so a loader without the decoder cannot read
+ * any of them — always build loaders here.
+ */
+export function createGltfLoader(): GLTFLoader {
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+}
 
 const MAX_PARALLEL_DOWNLOADS = 4;
 

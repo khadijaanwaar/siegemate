@@ -1,8 +1,10 @@
 /**
  * URLs of the AI-generated assets used by the game.
- * Models are loaded straight from R2 by GLTFLoader; audio is decoded by the
- * Web Audio mixer. Swapping in higher-quality glTF characters is a one-line
- * change per entry (see README).
+ * Everything is self-hosted under `public/assets/` (see {@link assetUrl}):
+ * `tools/optimize-assets.mjs` downloads each file named here and writes a
+ * compressed copy under the same name, so adding an asset is one line here
+ * plus a run of that script. Models are loaded by GLTFLoader (meshopt
+ * compressed); audio is decoded by the Web Audio mixer.
  */
 
 import type { Faction, PieceKind } from "../core/types";
@@ -11,7 +13,7 @@ import type { ArmSculptSource } from "../scene/armoury";
 import type { ShotModelSource } from "../scene/gunfire";
 import type { WeaponId } from "../scene/weapons";
 
-const MODEL_BASE = "https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g540sd";
+import { assetUrl } from "./assetUrl";
 
 /**
  * One army's sculpts. Every skin is a whole civilisation with its own roster of
@@ -35,32 +37,32 @@ export type ArmySkinId = "ivory" | "sun" | "empire";
 /** Static (unrigged) sculpt per kind — the fallback when a rig fails to load. */
 const STILL_MODELS: Record<ArmySkinId, Roster<string>> = {
   ivory: {
-    k: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8.glb`,
-    q: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886.glb`,
-    b: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72.glb`,
-    n: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2.glb`,
-    r: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1.glb`,
-    p: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69.glb`,
+    k: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8.glb"),
+    q: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886.glb"),
+    b: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72.glb"),
+    n: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2.glb"),
+    r: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1.glb"),
+    p: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69.glb"),
   },
   // Sun Empire: emperor, high priestess, serpent priest, jaguar warrior,
   // temple guardian and eagle footsoldier.
   sun: {
-    k: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7.glb`,
-    q: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467.glb`,
-    b: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb.glb`,
-    n: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c.glb`,
-    r: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee.glb`,
-    p: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f.glb`,
+    k: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7.glb"),
+    q: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467.glb"),
+    b: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb.glb"),
+    n: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c.glb"),
+    r: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee.glb"),
+    p: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f.glb"),
   },
   // Grande Armée: Napoléon, an imperial commander with the Marengo sword,
   // cuirassier champions, artillery guards and line infantry.
   empire: {
-    k: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8.glb`,
-    q: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952.glb`,
-    b: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c.glb`,
-    n: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1.glb`,
-    r: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2.glb`,
-    p: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e.glb`,
+    k: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8.glb"),
+    q: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952.glb"),
+    b: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c.glb"),
+    n: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1.glb"),
+    r: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2.glb"),
+    p: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e.glb"),
   },
 };
 
@@ -113,108 +115,108 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
   ivory: {
   // The crown stands at full height and judges rather than brawls.
   k: {
-    rigged: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-rigged.glb`,
-    idle: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-idle.glb`,
-    attack: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-sword-judgment.glb`,
-    death: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-dead.glb`,
+    rigged: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8-rigged.glb"),
+    idle: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-idle.glb"),
+    attack: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-sword-judgment.glb"),
+    death: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-dead.glb"),
     // A plain, upright stride: the catwalk strut read as a swagger on a king,
     // so the crown now walks normally and the slow cadence in GAITS supplies the
     // gravitas. Alternative on the same rig:
     // `...-anim-spear-walk-inplace.glb` (weapon-forward march).
-    walk: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-casual-walk-inplace.glb`,
+    walk: assetUrl("models", "704a772c-4a50-4619-b5ad-6e2bbf9703b8-anim-casual-walk-inplace.glb"),
   },
   q: {
-    rigged: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886-rigged.glb`,
-    idle: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886-anim-idle.glb`,
-    attack: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886-anim-charged-spell-cast.glb`,
-    death: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886-anim-dying-backwards.glb`,
+    rigged: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886-rigged.glb"),
+    idle: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886-anim-idle.glb"),
+    attack: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886-anim-charged-spell-cast.glb"),
+    death: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886-anim-dying-backwards.glb"),
     // Natural stride instead of the old red-carpet walk, whose crossed steps and
     // hip sway looked wrong under a battle gown.
     // Alternative: `...-anim-spear-walk-inplace.glb`.
-    walk: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886-anim-casual-walk-inplace.glb`,
+    walk: assetUrl("models", "13928f19-23a3-46ba-9879-aacca58f2886-anim-casual-walk-inplace.glb"),
   },
   b: {
-    rigged: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72-rigged.glb`,
-    idle: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-combat-stance.glb`,
-    attack: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-sword-judgment.glb`,
-    death: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-dead.glb`,
-    walk: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-spear-walk-inplace.glb`,
+    rigged: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72-rigged.glb"),
+    idle: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-combat-stance.glb"),
+    attack: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-sword-judgment.glb"),
+    death: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-dead.glb"),
+    walk: assetUrl("models", "6c99342a-e9a5-4959-a59b-c207e15a5c72-anim-spear-walk-inplace.glb"),
   },
   n: {
-    rigged: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-rigged.glb`,
-    idle: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-combat-stance.glb`,
-    attack: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-charged-slash.glb`,
-    death: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-dying-backwards.glb`,
-    walk: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-confident-strut-inplace.glb`,
+    rigged: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-rigged.glb"),
+    idle: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-combat-stance.glb"),
+    attack: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-charged-slash.glb"),
+    death: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-dying-backwards.glb"),
+    walk: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-confident-strut-inplace.glb"),
     // Carried through the leap, so the rider is charging rather than floating.
-    run: `${MODEL_BASE}/43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-standard-forward-charge-inplace.glb`,
+    run: assetUrl("models", "43f08150-5463-4112-9949-2e1a9a9a6bd2-anim-standard-forward-charge-inplace.glb"),
   },
   r: {
-    rigged: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1-rigged.glb`,
-    idle: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-combat-stance.glb`,
-    attack: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-heavy-hammer-swing.glb`,
-    death: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-knock-down.glb`,
+    rigged: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1-rigged.glb"),
+    idle: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-combat-stance.glb"),
+    attack: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-heavy-hammer-swing.glb"),
+    death: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-knock-down.glb"),
     // Full plate: an ordinary stride played at the guardian's slow cadence reads
     // as a heavy tread, where the hunched orc walk read as a monster.
     // Alternative: `...-anim-carry-heavy-object-walk-inplace.glb` (laden trudge).
-    walk: `${MODEL_BASE}/211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-casual-walk-inplace.glb`,
+    walk: assetUrl("models", "211b0ba5-2c7f-44ff-8143-b625bca41df1-anim-casual-walk-inplace.glb"),
   },
   p: {
-    rigged: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-rigged.glb`,
-    idle: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-combat-stance.glb`,
-    attack: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-thrust-slash.glb`,
-    death: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-knock-down.glb`,
-    walk: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-spear-walk-inplace.glb`,
+    rigged: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69-rigged.glb"),
+    idle: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-combat-stance.glb"),
+    attack: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-thrust-slash.glb"),
+    death: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-knock-down.glb"),
+    walk: assetUrl("models", "36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-spear-walk-inplace.glb"),
   },
   },
   sun: {
     k: {
-      rigged: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-rigged.glb`,
-      idle: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-idle.glb`,
-      attack: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-sword-judgment.glb`,
-      death: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-dead.glb`,
+      rigged: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-rigged.glb"),
+      idle: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-idle.glb"),
+      attack: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-sword-judgment.glb"),
+      death: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-dead.glb"),
       // As with the ivory king: upright natural stride, no catwalk sway.
       // Alternative: `...-anim-spear-walk-inplace.glb`.
-      walk: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-casual-walk-inplace.glb`,
+      walk: assetUrl("models", "ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-casual-walk-inplace.glb"),
     },
     q: {
-      rigged: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467-rigged.glb`,
-      idle: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467-anim-idle.glb`,
-      attack: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467-anim-charged-spell-cast.glb`,
-      death: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467-anim-dying-backwards.glb`,
+      rigged: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467-rigged.glb"),
+      idle: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467-anim-idle.glb"),
+      attack: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467-anim-charged-spell-cast.glb"),
+      death: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467-anim-dying-backwards.glb"),
       // Alternative: `...-anim-spear-walk-inplace.glb`.
-      walk: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467-anim-casual-walk-inplace.glb`,
+      walk: assetUrl("models", "d39273ce-17e5-41df-a7f5-634f944e3467-anim-casual-walk-inplace.glb"),
     },
     b: {
-      rigged: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb-rigged.glb`,
-      idle: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-sword-judgment.glb`,
-      death: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-dead.glb`,
-      walk: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-spear-walk-inplace.glb`,
+      rigged: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb-rigged.glb"),
+      idle: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-combat-stance.glb"),
+      attack: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-sword-judgment.glb"),
+      death: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-dead.glb"),
+      walk: assetUrl("models", "7066c2da-f466-438b-ab74-f2a45b2a0ddb-anim-spear-walk-inplace.glb"),
     },
     n: {
-      rigged: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-rigged.glb`,
-      idle: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-charged-slash.glb`,
-      death: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-dying-backwards.glb`,
+      rigged: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-rigged.glb"),
+      idle: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-combat-stance.glb"),
+      attack: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-charged-slash.glb"),
+      death: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-dying-backwards.glb"),
       // The jaguar warrior prowls where the ivory knight marches.
-      walk: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-sneaky-walk-inplace.glb`,
-      run: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-standard-forward-charge-inplace.glb`,
+      walk: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-sneaky-walk-inplace.glb"),
+      run: assetUrl("models", "a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c-anim-standard-forward-charge-inplace.glb"),
     },
     r: {
-      rigged: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee-rigged.glb`,
-      idle: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-heavy-hammer-swing.glb`,
-      death: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-knock-down.glb`,
+      rigged: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee-rigged.glb"),
+      idle: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-combat-stance.glb"),
+      attack: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-heavy-hammer-swing.glb"),
+      death: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-knock-down.glb"),
       // Alternative: `...-anim-carry-heavy-object-walk-inplace.glb`.
-      walk: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-casual-walk-inplace.glb`,
+      walk: assetUrl("models", "c044d8e8-28fd-4aa9-af00-d58ca49fedee-anim-casual-walk-inplace.glb"),
     },
     p: {
-      rigged: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-rigged.glb`,
-      idle: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-thrust-slash.glb`,
-      death: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-knock-down.glb`,
-      walk: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-spear-walk-inplace.glb`,
+      rigged: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f-rigged.glb"),
+      idle: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-combat-stance.glb"),
+      attack: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-thrust-slash.glb"),
+      death: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-knock-down.glb"),
+      walk: assetUrl("models", "2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-spear-walk-inplace.glb"),
     },
   },
   empire: {
@@ -222,14 +224,14 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     // flintlock comes up and the matter is settled from where he stands.
     // Alternative on the same rig: `...-anim-sword-judgment.glb` (dress sabre).
     k: {
-      rigged: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-rigged.glb`,
-      idle: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-idle.glb`,
+      rigged: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-rigged.glb"),
+      idle: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-idle.glb"),
       // The coat comes open and the pistol is levelled and held on the man
       // before the trigger is touched — the hold is what reads as taking aim.
-      aim: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-archery-aim-with-lateral-scan.glb`,
-      attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-cowboy-quick-draw-shooting.glb`,
-      death: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb`,
-      walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
+      aim: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-archery-aim-with-lateral-scan.glb"),
+      attack: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-cowboy-quick-draw-shooting.glb"),
+      death: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb"),
+      walk: assetUrl("models", "b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb"),
       // No reloading drill: unlike every other barrel in the army, this rig has
       // no reload take on the server (`-anim-standing-reload.glb` and
       // `-anim-kneeling-reload.glb` both 404). Naming one anyway cost every
@@ -245,13 +247,13 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     // Alternative on the same rig: `...-anim-charged-spell-cast.glb` (the old
     // sorceress cast, kept in case the court ever goes back to witchfire).
     q: {
-      rigged: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-rigged.glb`,
-      idle: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-idle.glb`,
-      aim: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-archery-aim-with-lateral-scan.glb`,
-      attack: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-cowboy-quick-draw-shooting.glb`,
-      death: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-dying-backwards.glb`,
-      walk: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-casual-walk-inplace.glb`,
-      reload: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-standing-reload.glb`,
+      rigged: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-rigged.glb"),
+      idle: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-idle.glb"),
+      aim: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-archery-aim-with-lateral-scan.glb"),
+      attack: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-cowboy-quick-draw-shooting.glb"),
+      death: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-dying-backwards.glb"),
+      walk: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-casual-walk-inplace.glb"),
+      reload: assetUrl("models", "a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-standing-reload.glb"),
     },
     // The Empire's marksman. He carries no staff and casts nothing: the rifle
     // comes up, he goes down on one knee, and the shot is taken from there.
@@ -279,22 +281,22 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     // Alternatives on the same rig: `...-anim-combat-stance.glb` (bare-fisted
     // guard), `...-anim-charged-spell-cast-1.glb` (the old staff cast).
     b: {
-      rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
-      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb`,
-      aim: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb`,
-      rise: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneel-on-one-knee-and-stand.glb`,
-      death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
-      walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb`,
-      reload: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneeling-reload.glb`,
+      rigged: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb"),
+      idle: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb"),
+      aim: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb"),
+      rise: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneel-on-one-knee-and-stand.glb"),
+      death: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb"),
+      walk: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb"),
+      reload: assetUrl("models", "779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneeling-reload.glb"),
     },
     n: {
-      rigged: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-rigged.glb`,
-      idle: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-charged-slash.glb`,
-      death: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-dying-backwards.glb`,
+      rigged: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-rigged.glb"),
+      idle: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-combat-stance.glb"),
+      attack: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-charged-slash.glb"),
+      death: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-dying-backwards.glb"),
       // A cavalryman on foot still swaggers.
-      walk: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-confident-strut-inplace.glb`,
-      run: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-standard-forward-charge-inplace.glb`,
+      walk: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-confident-strut-inplace.glb"),
+      run: assetUrl("models", "ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-standard-forward-charge-inplace.glb"),
     },
     // The battery: the crew lays the gun it hauls, then serves it. Its "strike"
     // is the step in to the trail and the shove on the lanyard. Its hands are
@@ -307,24 +309,24 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     // Alternatives on the same rig: `...-anim-combat-stance.glb`,
     // `...-anim-carry-heavy-cannon-forward-inplace.glb`.
     r: {
-      rigged: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-rigged.glb`,
-      idle: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-idle.glb`,
-      attack: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-step-forward-and-push.glb`,
-      death: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-knock-down.glb`,
-      walk: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-casual-walk-inplace.glb`,
+      rigged: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-rigged.glb"),
+      idle: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-idle.glb"),
+      attack: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-step-forward-and-push.glb"),
+      death: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-knock-down.glb"),
+      walk: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-casual-walk-inplace.glb"),
       // Kneeling at the muzzle with powder and shot once the piece has spoken.
-      reload: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-kneeling-reload.glb`,
+      reload: assetUrl("models", "044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-kneeling-reload.glb"),
     },
     // Line infantry fires a volley rather than closing with the bayonet.
     // Alternative: `...-anim-thrust-slash.glb` (bayonet thrust).
     p: {
-      rigged: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-rigged.glb`,
-      idle: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-combat-stance.glb`,
+      rigged: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-rigged.glb"),
+      idle: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-combat-stance.glb"),
       // Musket into the shoulder, cheek down on the stock, barrel tracking the
       // man across the board: the volley is aimed before it is fired.
-      aim: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-archery-aim-with-lateral-scan.glb`,
-      attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-draw-and-shoot-from-back.glb`,
-      death: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb`,
+      aim: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-archery-aim-with-lateral-scan.glb"),
+      attack: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-draw-and-shoot-from-back.glb"),
+      death: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb"),
       // Musket held across the body at the ready — the line advances, it does
       // not stroll. A full 1.13s gait cycle, so retimed to the footsoldier's
       // cadence it reads as a march. The rifle *charge* on the same rig
@@ -332,8 +334,8 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       // and whose hips carry six units of side-to-side root motion — stretched
       // over a single square it read as a man juddering on the spot, so it is
       // kept only as the charge below.
-      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-spear-walk-inplace.glb`,
-      reload: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-standing-reload.glb`,
+      walk: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-spear-walk-inplace.glb"),
+      reload: assetUrl("models", "29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-standing-reload.glb"),
     },
   },
 };
@@ -354,13 +356,13 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
  */
 export const SHOT_MODELS: ShotModelSource[] = [
   // Officer's flintlock: small, barely out of round, mould seam still on it.
-  { ammo: "pistolBall", url: `${MODEL_BASE}/49825d82-a7a6-4658-98e0-0c86275128d5.glb` },
+  { ammo: "pistolBall", url: assetUrl("models", "49825d82-a7a6-4658-98e0-0c86275128d5.glb") },
   // .69 soft lead, dented flat in places by the ramrod and stained with fouling.
-  { ammo: "musketBall", url: `${MODEL_BASE}/737c408d-b677-4be0-a805-02354f7f3532.glb` },
+  { ammo: "musketBall", url: assetUrl("models", "737c408d-b677-4be0-a805-02354f7f3532.glb") },
   // The only conical round in the army: ogive nose, grease grooves, hollow base.
-  { ammo: "minieBullet", url: `${MODEL_BASE}/76d56227-19ad-46cf-b9e8-b84f93bef133.glb` },
+  { ammo: "minieBullet", url: assetUrl("models", "76d56227-19ad-46cf-b9e8-b84f93bef133.glb") },
   // Six pounds of sand-cast iron, pockmarked and seamed round its middle.
-  { ammo: "roundShot", url: `${MODEL_BASE}/dca2d8a4-736e-4e04-ace0-691ae325a730.glb` },
+  { ammo: "roundShot", url: assetUrl("models", "dca2d8a4-736e-4e04-ace0-691ae325a730.glb") },
 ];
 
 /**
@@ -390,7 +392,7 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
   // end, the lock's bulge at 0.22 of the length, bayonet socket at 0.80, point
   // at the far end — the longest silhouette on the board.
   musketBayonet: {
-    url: `${MODEL_BASE}/bc6b8c09-5d21-440c-b145-eee190c2e0cf.glb`,
+    url: assetUrl("models", "bc6b8c09-5d21-440c-b145-eee190c2e0cf.glb"),
     length: 0.86,
     grip: 0.19,
     // The bore, not the bayonet point: the flash has to leave the barrel.
@@ -399,7 +401,7 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
   },
   // 1793 Versailles rifled carbine: cheek piece, leaf sight, no bayonet.
   marksmanRifle: {
-    url: `${MODEL_BASE}/4fb92659-06c6-4bbe-b0d3-ed21f37c2c8b.glb`,
+    url: assetUrl("models", "4fb92659-06c6-4bbe-b0d3-ed21f37c2c8b.glb"),
     length: 0.85,
     grip: 0.3,
     muzzle: 0.985,
@@ -407,7 +409,7 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
   },
   // An XI heavy cavalry sword: straight blade, four-branch brass bowl guard.
   cavalrySabre: {
-    url: `${MODEL_BASE}/ebf0edf9-d446-4fa7-a0a7-d1db4e6123ed.glb`,
+    url: assetUrl("models", "ebf0edf9-d446-4fa7-a0a7-d1db4e6123ed.glb"),
     length: 0.63,
     grip: 0.11,
     family: "blade",
@@ -420,7 +422,7 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
   // puts the Emperor's blade *shorter* than the trooper's An XI (0.63) rather
   // than the longest steel on the board.
   imperialSabre: {
-    url: `${MODEL_BASE}/47492c2e-f774-49e0-b2ef-113a02132a50.glb`,
+    url: assetUrl("models", "47492c2e-f774-49e0-b2ef-113a02132a50.glb"),
     length: 0.54,
     grip: 0.11,
     family: "blade",
@@ -430,14 +432,14 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
   // A court sword is the longest, straightest blade worn at the imperial court
   // and still only about a metre overall — 0.58 of the figure wearing it.
   marengoSword: {
-    url: `${MODEL_BASE}/307d49bd-b8c8-44b5-9837-bd55d8c849b6.glb`,
+    url: assetUrl("models", "307d49bd-b8c8-44b5-9837-bd55d8c849b6.glb"),
     length: 0.58,
     grip: 0.13,
     family: "blade",
   },
   // An XIII officer's flintlock pistol, gilt-mounted, muzzle-first in the file.
   officerPistol: {
-    url: `${MODEL_BASE}/ff7079b3-d6d5-44a9-a43a-0bf4d3a2954d.glb`,
+    url: assetUrl("models", "ff7079b3-d6d5-44a9-a43a-0bf4d3a2954d.glb"),
     length: 0.27,
     grip: 0.15,
     muzzle: 0.98,
@@ -454,8 +456,6 @@ export const PIECE_MODEL_ORIENTATION = {
   localUpAxis: "positiveY",
 } as const;
 
-const CRY_BASE = "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd";
-
 /**
  * One death cry per figure per army. They are voiced in character — the ivory
  * kingdom dies like medieval Europeans, the Sun Empire like jaguar/eagle
@@ -468,22 +468,22 @@ const CRY_BASE = "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd"
  */
 const DEATH_CRIES: Record<ArmySkinId, Record<PieceKind, string>> = {
   ivory: {
-    k: `${CRY_BASE}/c4d801f3-b8e7-42bb-b046-6b21e9ec40a5.mp3`,
-    q: `${CRY_BASE}/e01a2d0f-2b13-426b-89b4-d40e67d4b16f.mp3`,
-    b: `${CRY_BASE}/4ca6a216-52fc-4882-b51a-9a44d188edac.mp3`,
-    n: `${CRY_BASE}/ebb33bba-cf2b-481f-aec6-4465a6a35253.mp3`,
-    r: `${CRY_BASE}/f9d84835-112f-46de-951b-052f867814da.mp3`,
-    p: `${CRY_BASE}/e4caca0d-8f61-4228-b349-025ae499cde5.mp3`,
+    k: assetUrl("audio", "c4d801f3-b8e7-42bb-b046-6b21e9ec40a5.mp3"),
+    q: assetUrl("audio", "e01a2d0f-2b13-426b-89b4-d40e67d4b16f.mp3"),
+    b: assetUrl("audio", "4ca6a216-52fc-4882-b51a-9a44d188edac.mp3"),
+    n: assetUrl("audio", "ebb33bba-cf2b-481f-aec6-4465a6a35253.mp3"),
+    r: assetUrl("audio", "f9d84835-112f-46de-951b-052f867814da.mp3"),
+    p: assetUrl("audio", "e4caca0d-8f61-4228-b349-025ae499cde5.mp3"),
   },
   sun: {
-    k: `${CRY_BASE}/7efd7eb4-936a-4488-83ae-e0ebea314601.mp3`,
+    k: assetUrl("audio", "7efd7eb4-936a-4488-83ae-e0ebea314601.mp3"),
     // Young female voice — a plain drawn-out "ahhhh" scream cut by a gasp.
-    q: `${CRY_BASE}/6fe2ac5d-b4e4-4655-9354-cfbb117bc7f5.mp3`,
-    b: `${CRY_BASE}/6ae51ccd-12c2-4002-875d-ec4c1d907227.mp3`,
-    n: `${CRY_BASE}/a66374c2-9253-4f07-8202-1001ccf6ba69.mp3`,
-    r: `${CRY_BASE}/6107aca9-aa81-45ff-a3d5-eda9d457fc3b.mp3`,
+    q: assetUrl("audio", "6fe2ac5d-b4e4-4655-9354-cfbb117bc7f5.mp3"),
+    b: assetUrl("audio", "6ae51ccd-12c2-4002-875d-ec4c1d907227.mp3"),
+    n: assetUrl("audio", "a66374c2-9253-4f07-8202-1001ccf6ba69.mp3"),
+    r: assetUrl("audio", "6107aca9-aa81-45ff-a3d5-eda9d457fc3b.mp3"),
     // Deep male voice — a rising shout cut short by the death gasp.
-    p: `${CRY_BASE}/ffa27c35-53ff-4f3a-a71e-285aff8a2a4b.mp3`,
+    p: assetUrl("audio", "ffa27c35-53ff-4f3a-a71e-285aff8a2a4b.mp3"),
   },
   // The Grande Armée dies its own death. Where the ivory kingdom roars and the
   // Sun Empire shrieks, a powder army takes the ball and goes quiet fast: these
@@ -491,20 +491,20 @@ const DEATH_CRIES: Record<ArmySkinId, Record<PieceKind, string>> = {
   empire: {
     // Napoléon: a commanding grunt of shock bitten off through clenched teeth.
     // He does not scream; the coat closes on it.
-    k: `${CRY_BASE}/dd0626e5-1b47-4d72-800b-503ae732f16d.mp3`,
+    k: assetUrl("audio", "dd0626e5-1b47-4d72-800b-503ae732f16d.mp3"),
     // Imperial Commander: sharp indrawn breath, then a low pained gasp fading —
     // held together rather than shrieked, unlike the two sorceress queens.
-    q: `${CRY_BASE}/bbae4ca6-bb5c-46b5-be77-b2a4e6bfc890.mp3`,
+    q: assetUrl("audio", "bbae4ca6-bb5c-46b5-be77-b2a4e6bfc890.mp3"),
     // Marshal-Tirailleur: hit on the knee he fires from — a clipped grunt and a
     // rasp low to the ground.
-    b: `${CRY_BASE}/203b9d42-08e3-43e5-96e3-9c7653f419db.mp3`,
+    b: assetUrl("audio", "203b9d42-08e3-43e5-96e3-9c7653f419db.mp3"),
     // Cuirassier: a furious bellow boxed in by the steel helmet, ending wet.
-    n: `${CRY_BASE}/f2391f92-4656-4dd2-bb62-8975ca2926a8.mp3`,
+    n: assetUrl("audio", "f2391f92-4656-4dd2-bb62-8975ca2926a8.mp3"),
     // Artillery Guard: the heaviest man on the board — a deep winded groan
     // sagging in pitch as the weight goes down.
-    r: `${CRY_BASE}/1dc52c19-e964-4089-a111-d0b1122b4198.mp3`,
+    r: assetUrl("audio", "1dc52c19-e964-4089-a111-d0b1122b4198.mp3"),
     // Line Infantry: young, thin, panicked — a rising cry snapped short.
-    p: `${CRY_BASE}/d32a7184-f41f-4ad9-a61b-a4dc386648e2.mp3`,
+    p: assetUrl("audio", "d32a7184-f41f-4ad9-a61b-a4dc386648e2.mp3"),
   },
 };
 
@@ -596,15 +596,15 @@ export const DEFAULT_ARMY_SKINS: Record<Faction, ArmySkinId> = { w: "ivory", b: 
  */
 export const GUN_AUDIO_URLS = {
   /** The Emperor's flintlock: a dry, bright crack. */
-  pistol: `${CRY_BASE}/a8cbcada-acce-4a51-8690-974d0e50a68a.mp3`,
+  pistol: assetUrl("audio", "a8cbcada-acce-4a51-8690-974d0e50a68a.mp3"),
   /** A Charleville musket in a stone hall: crack over a chest thump. */
-  musket: `${CRY_BASE}/b042be28-3bb5-48e8-b0a5-ef7a1fbec2d5.mp3`,
+  musket: assetUrl("audio", "b042be28-3bb5-48e8-b0a5-ef7a1fbec2d5.mp3"),
   /** The marksman's rifled barrel: a tighter, thinner whip-crack. */
-  rifle: `${CRY_BASE}/9ab8b947-9b2c-4cfc-8b26-653be55a6451.mp3`,
+  rifle: assetUrl("audio", "9ab8b947-9b2c-4cfc-8b26-653be55a6451.mp3"),
   /** The battery: a boom with the carriage running back over stone under it. */
-  cannon: `${CRY_BASE}/65e94019-873c-478d-a688-e76d01bb73a3.mp3`,
+  cannon: assetUrl("audio", "65e94019-873c-478d-a688-e76d01bb73a3.mp3"),
   /** The ball arriving: ricochet whine cut short by a thud into a body. */
-  impact: `${CRY_BASE}/a0f8c443-5140-41f8-b21c-770450ae9751.mp3`,
+  impact: assetUrl("audio", "a0f8c443-5140-41f8-b21c-770450ae9751.mp3"),
 } as const;
 
 /** Which recorded barrel each rank of the Grande Armée fires. */
@@ -647,35 +647,35 @@ export interface ArenaScore {
 export const ARENA_SCORES: Record<ArenaTheme, ArenaScore> = {
   /** Bone flute and log drums under a wet canopy. */
   jungle: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/a33c5628-c5a1-442d-a13f-6fc2b8c14c31.mp3",
+    url: assetUrl("audio", "a33c5628-c5a1-442d-a13f-6fc2b8c14c31.mp3"),
     loudness: -13.5,
     lead: 0.05,
     tail: 1.5,
   },
   /** Vielle, harp and a recorder in the morning air. */
   dawn: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/2ecff03e-6efb-4939-a03e-908b22c44ef4.mp3",
+    url: assetUrl("audio", "2ecff03e-6efb-4939-a03e-908b22c44ef4.mp3"),
     loudness: -21,
     lead: 0,
     tail: 2.2,
   },
   /** Oud, ney and frame drum over hot stone. */
   sands: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/f8a1c966-f6a4-4076-8890-b7a3de52176b.mp3",
+    url: assetUrl("audio", "f8a1c966-f6a4-4076-8890-b7a3de52176b.mp3"),
     loudness: -33.4,
     lead: 0.05,
     tail: 0.25,
   },
   /** Nyckelharpa drone and glass bells over snow. */
   frost: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/a396e898-7933-4eaa-b09e-c05443e9fa07.mp3",
+    url: assetUrl("audio", "a396e898-7933-4eaa-b09e-c05443e9fa07.mp3"),
     loudness: -13.3,
     lead: 0.1,
     tail: 0,
   },
   /** Tremolo cello and far-off thunder. */
   storm: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/38f30f11-e58a-42ab-9259-2915cac984cd.mp3",
+    url: assetUrl("audio", "38f30f11-e58a-42ab-9259-2915cac984cd.mp3"),
     loudness: -15.1,
     lead: 0,
     tail: 0,
@@ -686,7 +686,7 @@ export const ARENA_SCORES: Record<ArenaTheme, ArenaScore> = {
    * balanced underneath.
    */
   dusk: {
-    url: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/3fbe58de-9d38-4d91-a002-794d0e979eb0.mp3",
+    url: assetUrl("audio", "3fbe58de-9d38-4d91-a002-794d0e979eb0.mp3"),
     loudness: -18.5,
     lead: 0.8,
     tail: 0.8,
@@ -708,12 +708,12 @@ export const ARENA_SCORES: Record<ArenaTheme, ArenaScore> = {
  * they arrive, with the old gradient still painted underneath as the backdrop.
  */
 export const ARENA_CARDS: Record<ArenaTheme, string> = {
-  jungle: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/20992cc1-d88b-4ed9-8784-cea941f0405b.png",
-  dawn: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/6a4b6904-4cd3-4e9e-b10f-21647237de73.png",
-  sands: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/74ff339e-5349-485c-a6aa-3ea838b2a4b8.png",
-  frost: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/74e91d9b-4371-4237-a718-d66d8a0b6656.png",
-  storm: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/5effa91a-f969-422c-9c95-4be195282998.png",
-  dusk: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/8b01e0a2-5ce2-4d31-aef3-7cb3521c467f.png",
+  jungle: assetUrl("cards", "20992cc1-d88b-4ed9-8784-cea941f0405b.webp"),
+  dawn: assetUrl("cards", "6a4b6904-4cd3-4e9e-b10f-21647237de73.webp"),
+  sands: assetUrl("cards", "74ff339e-5349-485c-a6aa-3ea838b2a4b8.webp"),
+  frost: assetUrl("cards", "74e91d9b-4371-4237-a718-d66d8a0b6656.webp"),
+  storm: assetUrl("cards", "5effa91a-f969-422c-9c95-4be195282998.webp"),
+  dusk: assetUrl("cards", "8b01e0a2-5ce2-4d31-aef3-7cb3521c467f.webp"),
 };
 
 /**
@@ -730,9 +730,9 @@ export const ARENA_CARDS: Record<ArenaTheme, string> = {
  * a card whose painting has not arrived yet still reads correctly.
  */
 export const ARMY_CARDS: Record<ArmySkinId, string> = {
-  ivory: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/dc88fa56-b565-4cf8-aa98-9997c8685e5d.png",
-  sun: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/3315dcf5-50c4-455b-bf13-aec6ff2ca2fd.png",
-  empire: "https://r2-pub.rork.com/projects/g9111r67kl6tq85g540sd/assets/ea0a3e42-30f9-4a74-be8c-e74ea4513d1a.png",
+  ivory: assetUrl("cards", "dc88fa56-b565-4cf8-aa98-9997c8685e5d.webp"),
+  sun: assetUrl("cards", "3315dcf5-50c4-455b-bf13-aec6ff2ca2fd.webp"),
+  empire: assetUrl("cards", "ea0a3e42-30f9-4a74-be8c-e74ea4513d1a.webp"),
 };
 
 /**
@@ -765,7 +765,7 @@ export interface LandmarkSource {
 export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
   /** A moss-eaten feathered-serpent head, glyphs cut along the jaw. */
   jungle: {
-    url: `${MODEL_BASE}/9dd00cff-205c-4271-8c3d-81f19a5e7312.glb`,
+    url: assetUrl("models", "9dd00cff-205c-4271-8c3d-81f19a5e7312.glb"),
     height: 13,
     count: 2,
     bearing: 2.1,
@@ -773,7 +773,7 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
   },
   /** A round watchtower with half its battlements fallen away. */
   dawn: {
-    url: `${MODEL_BASE}/2dc211ea-0f2c-4f11-a403-585899dcf963.glb`,
+    url: assetUrl("models", "2dc211ea-0f2c-4f11-a403-585899dcf963.glb"),
     height: 21,
     count: 2,
     bearing: 0.6,
@@ -781,7 +781,7 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
   },
   /** A crowned colossus buried to the shoulders in sand. */
   sands: {
-    url: `${MODEL_BASE}/b6b12786-f7df-4b84-b396-180f9e927376.glb`,
+    url: assetUrl("models", "b6b12786-f7df-4b84-b396-180f9e927376.glb"),
     height: 17,
     count: 2,
     bearing: 3.5,
@@ -793,7 +793,7 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
    * so it carries the quarter-turn that puts its prow toward the board.
    */
   frost: {
-    url: `${MODEL_BASE}/62a4c668-34ba-4fd0-947c-8ad16a07b0d3.glb`,
+    url: assetUrl("models", "62a4c668-34ba-4fd0-947c-8ad16a07b0d3.glb"),
     height: 11,
     count: 2,
     bearing: 1.2,
@@ -801,7 +801,7 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
   },
   /** A beacon tower, roof torn off, fire basket open to the rain. */
   storm: {
-    url: `${MODEL_BASE}/9a03ed06-8aa0-4006-822e-75c3a176a6dd.glb`,
+    url: assetUrl("models", "9a03ed06-8aa0-4006-822e-75c3a176a6dd.glb"),
     height: 23,
     count: 2,
     bearing: 4.4,
@@ -809,7 +809,7 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
   },
   /** The gatehouse the siege went through: portcullis crooked, stone burnt. */
   dusk: {
-    url: `${MODEL_BASE}/aacc3a14-3a74-4e3b-be87-319278f95d42.glb`,
+    url: assetUrl("models", "aacc3a14-3a74-4e3b-be87-319278f95d42.glb"),
     height: 16,
     count: 2,
     bearing: 5.2,
@@ -818,10 +818,10 @@ export const ARENA_LANDMARKS: Partial<Record<ArenaTheme, LandmarkSource>> = {
 };
 
 export const AUDIO_URLS = {
-  ambience: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/e62d5bb9-8c84-4464-8696-dbcf975f938b.mp3",
-  tension: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/00baae5a-fde3-478a-8190-b1ad14d2e96d.mp3",
-  place: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/73f19d09-0275-4c4b-87cd-eeeed26a616b.mp3",
-  capture: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/64ee8170-b796-413f-8249-f1deb7803393.mp3",
-  check: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/20ebb41c-0b20-4b4b-8c75-5f78541722d3.mp3",
-  fanfare: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/c89fa5ef-7904-4a5f-899e-e1973b13b30f.mp3",
+  ambience: assetUrl("audio", "e62d5bb9-8c84-4464-8696-dbcf975f938b.mp3"),
+  tension: assetUrl("audio", "00baae5a-fde3-478a-8190-b1ad14d2e96d.mp3"),
+  place: assetUrl("audio", "73f19d09-0275-4c4b-87cd-eeeed26a616b.mp3"),
+  capture: assetUrl("audio", "64ee8170-b796-413f-8249-f1deb7803393.mp3"),
+  check: assetUrl("audio", "20ebb41c-0b20-4b4b-8c75-5f78541722d3.mp3"),
+  fanfare: assetUrl("audio", "c89fa5ef-7904-4a5f-899e-e1973b13b30f.mp3"),
 } as const;

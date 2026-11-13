@@ -1,11 +1,10 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import type { ArenaLook, ArenaTheme } from "./arena";
 import { ARENA_LOOKS, DEFAULT_ARENA } from "./arena";
 import { ARENA_LANDMARKS, type LandmarkSource } from "../assets/generated";
 import { terrainHeight } from "./battlefield";
-import { loadGltf } from "./gltfQueue";
+import { createGltfLoader, loadGltf } from "./gltfQueue";
 import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
 
 /**
@@ -69,7 +68,7 @@ function seedFor(theme: ArenaTheme): number {
 export class Landmarks {
   readonly group = new THREE.Group();
 
-  private loader = new GLTFLoader();
+  private loader = createGltfLoader();
   /** Built rings, one per theme. Shown and hidden, never rebuilt. */
   private rings = new Map<ArenaTheme, THREE.Group>();
   private jobs = new Map<ArenaTheme, Promise<void>>();

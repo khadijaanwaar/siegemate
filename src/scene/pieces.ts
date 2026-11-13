@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import {
@@ -12,7 +11,7 @@ import {
   type PieceAnimationSet,
 } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
-import { loadGltf } from "./gltfQueue";
+import { createGltfLoader, loadGltf } from "./gltfQueue";
 import { BADGE_LIFT, BADGE_SCALE, TOKEN_SCALE, rankBadgeTexture, tacticalTokenTexture } from "./rankBadges";
 import { factionRingTexture, radialTexture } from "./textures";
 import { Ease, type TweenManager } from "./tween";
@@ -1741,7 +1740,7 @@ const MAX_CLIP_ATTEMPTS = 2;
  */
 export class PieceFactory {
   private templates = new Map<TemplateKey, Template>();
-  private loader = new GLTFLoader();
+  private loader = createGltfLoader();
   private loaded = false;
   /** Which army each side is currently mustering. */
   private skins: Record<Faction, ArmySkinId> = { ...DEFAULT_ARMY_SKINS };
