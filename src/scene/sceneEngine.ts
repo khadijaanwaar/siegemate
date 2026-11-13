@@ -1129,7 +1129,10 @@ export class SceneEngine {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: settings.msaaSamples > 0,
+      // Always on. It is the default framebuffer's MSAA on a desktop (cheap at
+      // the low preset's pixel ratio) and, in a headset, the XR layer's: Quest's
+      // tiled GPU resolves MSAA on chip, so jagged edges are never worth saving.
+      antialias: true,
       powerPreference: "high-performance",
       alpha: false,
     });

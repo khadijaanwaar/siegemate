@@ -63,7 +63,9 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     emberCount: 0,
     maxPixelRatio: 1,
     captureParticles: 18,
-    idleAnimations: false,
+    // The armies breathe on every preset: a frozen rank reads as broken. Idle
+    // figures update every other frame, which is what makes that affordable.
+    idleAnimations: true,
     idleUpdateEvery: 2,
     troopCount: 60,
     campfires: 0,
