@@ -19,7 +19,7 @@ The deploy is a Pages *Direct Upload* in three steps.
    CF_PAGES_JWT=<token> node tools/deploy-pages.mjs dist .perf/pages-manifest.json
    ```
 4. **Create the deployment** (Cloudflare MCP `execute`): POST a multipart form to
-   `/accounts/${accountId}/pages/projects/siegemate/deployments` with fields `manifest` (the JSON from step 3),
+   `/accounts/${accountId}/pages/projects/siegemate/deployments` with fields `manifest` (the JSON from step 3; `.perf/pages-manifest.json.gz.b64` is the same gzipped, which the MCP sandbox can gunzip with DecompressionStream),
    `_headers` (the contents of `dist/_headers`), `branch=main`, `commit_hash`, `commit_message`.
 
 Check afterwards:
