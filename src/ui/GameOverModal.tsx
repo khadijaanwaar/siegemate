@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import type { PlayerStats } from "../core/stats";
-import { RecordStrip } from "./RecordStrip";
-import { Check, Copy, Home, PauseCircle, RotateCw, Swords } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, Copy, Home, Pause, RotateCw, Swords } from "lucide-react";
 
 import { DEMO_REMATCH_DELAY_MS } from "../core/gameController";
+import type { PlayerStats } from "../core/stats";
 import type { Difficulty, EndReason, Faction, GameResult } from "../core/types";
 import { Crest } from "./Heraldry";
+import { RecordStrip } from "./RecordStrip";
 
 /**
  * Extra framing for an AI vs AI duel. The viewer is an audience,
@@ -40,9 +40,9 @@ interface GameOverModalProps {
 
 const REASON_COPY: Record<EndReason, string> = {
   checkmate: "Checkmate",
-  stalemate: "Stalemate — the king cannot move",
-  resignation: "The banner was lowered",
-  timeout: "The hourglass ran dry",
+  stalemate: "Stalemate",
+  resignation: "By resignation",
+  timeout: "On time",
   threefold: "Threefold repetition",
   insufficient: "Insufficient material",
   fiftymove: "Fifty-move rule",
@@ -54,6 +54,8 @@ const ENGINE_NAME: Record<Difficulty, string> = {
   medium: "Knight",
   hard: "Warlord",
 };
+
+const SIDE_NAME: Record<Faction, string> = { w: "Ivory", b: "Obsidian" };
 
 export function GameOverModal({
   result,
@@ -67,22 +69,17 @@ export function GameOverModal({
   onMenu,
 }: GameOverModalProps) {
   const [copied, setCopied] = useState(false);
+  const headlineId = useId();
 
-  const draw = result.winner === null;
-  const playerWon = versusComputer && result.winner === playerColor;
-  const headline = draw
-    ? "A DRAW"
-    : showcase
-      ? result.winner === "w"
-        ? "IVORY TRIUMPHS"
-        : "OBSIDIAN TRIUMPHS"
-      : playerWon
-        ? "VICTORY"
-        : versusComputer
-          ? "DEFEAT"
-          : result.winner === "w"
-            ? "IVORY TRIUMPHS"
-            : "OBSIDIAN TRIUMPHS";
+  const { winner } = result;
+  // Against the computer the card speaks to the player; otherwise it names the side.
+  const personal = versusComputer && !showcase;
+  const headline =
+    winner === null ? "Draw" : personal ? (winner === playerColor ? "Victory" : "Defeat") : `${SIDE_NAME[winner]} wins`;
+  const tone = winner === null ? "draw" : personal ? (winner === playerColor ? "win" : "loss") : winner;
+  const reason = showcase
+    ? `${REASON_COPY[result.reason]} · ${moveCount} ${moveCount === 1 ? "move" : "moves"}`
+    : REASON_COPY[result.reason];
 
   const copyPgn = async (): Promise<void> => {
     try {
@@ -98,68 +95,56 @@ export function GameOverModal({
   // stays thin and unblurred there instead of hiding the hall behind the card.
   return (
     <div
-      className={`mc-modal-pad pointer-events-auto absolute inset-0 z-30 flex items-center justify-center ${
-        showcase ? "bg-black/35" : "bg-black/65 backdrop-blur-[3px]"
-      }`}
+      className="mc-modal-pad mc-dialog-scrim pointer-events-auto absolute inset-0 z-30 flex items-center justify-center"
+      data-showcase={showcase ? "true" : undefined}
     >
-      <div className="mc-parchment mc-goldleaf mc-rise w-full max-w-md overflow-hidden">
-        <div className="px-6 pb-6 pt-7 text-center">
-          {showcase ? (
-            <p className="mc-display text-[0.55rem] tracking-[0.42em] text-[#8a6b3a]">
-              AI VS AI · DUEL {showcase.round}
-            </p>
-          ) : null}
+      <div className="mc-dialog mc-rise" role="dialog" aria-modal="true" aria-labelledby={headlineId}>
+        {showcase ? (
+          <p className="mc-dialog-eyebrow">
+            {ENGINE_NAME[showcase.white]} vs {ENGINE_NAME[showcase.black]} · Duel {showcase.round}
+          </p>
+        ) : null}
 
-          <div className={`flex justify-center gap-3 ${showcase ? "mt-3" : ""}`}>
-            {result.winner ? (
-              <Crest faction={result.winner} size={44} active />
-            ) : (
-              <>
-                <Crest faction="w" size={34} />
-                <Crest faction="b" size={34} />
-              </>
-            )}
+        <div className="mc-dialog-crests" aria-hidden="true">
+          {result.winner ? (
+            <Crest faction={result.winner} size={44} active />
+          ) : (
+            <>
+              <Crest faction="w" size={36} />
+              <Crest faction="b" size={36} />
+            </>
+          )}
+        </div>
+
+        <h2 id={headlineId} className="mc-wordmark mc-dialog-headline" data-tone={tone}>
+          {headline}
+        </h2>
+        <p className="mc-dialog-reason">{reason}</p>
+
+        {stats && !showcase ? (
+          <div className="mc-dialog-record">
+            <RecordStrip stats={stats} />
           </div>
+        ) : null}
 
-          <h2 className="mc-display mt-4 text-3xl font-bold tracking-[0.14em] text-[#43301a]">{headline}</h2>
-          <div className="mc-rule mx-auto mt-2 w-40 opacity-70" />
-          <p className="mt-2 text-sm italic text-[#6a5334]">{REASON_COPY[result.reason]}</p>
+        {showcase?.autoRematch ? (
+          <NextDuelCountdown getRemaining={showcase.getRematchRemaining} onHold={showcase.onHold} />
+        ) : null}
 
-          {stats && !showcase ? (
-            <div className="mt-3">
-              <RecordStrip stats={stats} tone="parchment" />
-            </div>
-          ) : null}
-
-          {showcase ? (
-            <p className="mc-display mt-2 text-[0.6rem] tracking-[0.24em] text-[#7d6236]">
-              {ENGINE_NAME[showcase.white]} <span className="text-[#a2854c]">vs</span> {ENGINE_NAME[showcase.black]} ·{" "}
-              {moveCount} {moveCount === 1 ? "move" : "moves"}
-            </p>
-          ) : null}
-
-          <div className="mt-5 max-h-24 overflow-y-auto rounded-sm border border-[#8a652255] bg-[#00000010] p-3 text-left font-mono text-[0.7rem] leading-relaxed text-[#4a3a24]">
-            {pgn.length > 0 ? pgn : "1. (no moves)"}
-          </div>
-
-          {showcase?.autoRematch ? (
-            <NextDuelCountdown getRemaining={showcase.getRematchRemaining} onHold={showcase.onHold} />
-          ) : null}
-
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <button type="button" className="mc-btn mc-btn-primary flex items-center justify-center gap-2" onClick={onRematch}>
-              {showcase ? <RotateCw size={15} /> : <Swords size={15} />} {showcase ? "Another duel" : "Rematch"}
-            </button>
-            <button type="button" className="mc-btn flex items-center justify-center gap-2" onClick={onMenu}>
-              <Home size={15} /> Great hall
-            </button>
-          </div>
+        <div className="mc-dialog-actions">
+          <button type="button" className="mc-btn mc-btn-primary mc-btn-lg" onClick={onRematch}>
+            {showcase ? <RotateCw size={18} aria-hidden="true" /> : <Swords size={18} aria-hidden="true" />} Rematch
+          </button>
+          <button type="button" className="mc-btn mc-btn-lg" onClick={onMenu} aria-label="Back to the menu">
+            <Home size={18} aria-hidden="true" /> Menu
+          </button>
           <button
             type="button"
-            className="mc-btn mt-2 flex w-full items-center justify-center gap-2"
+            className="mc-btn mc-btn-ghost mc-btn-md mc-dialog-copy"
             onClick={() => void copyPgn()}
           >
-            {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy record (PGN)"}
+            {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+            {copied ? "Copied" : "Copy PGN"}
           </button>
         </div>
       </div>
@@ -188,22 +173,15 @@ function NextDuelCountdown({ getRemaining, onHold }: { getRemaining: () => numbe
   const ratio = Math.min(1, Math.max(0, remaining / DEMO_REMATCH_DELAY_MS));
 
   return (
-    <div className="mt-4 rounded-sm border border-[#8a652244] bg-[#00000010] px-3 py-2.5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="mc-display text-[0.58rem] tracking-[0.26em] text-[#7d6236]">NEXT DUEL IN {seconds}s</p>
-        <button
-          type="button"
-          className="mc-display flex items-center gap-1 rounded-sm border border-[#8a652277] px-2 py-1 text-[0.55rem] tracking-[0.2em] text-[#5f4a26] transition-colors hover:border-[#8a6522] hover:text-[#3d2d15]"
-          onClick={onHold}
-        >
-          <PauseCircle size={12} /> HOLD
+    <div className="mc-countdown">
+      <div className="mc-countdown-row">
+        <p>Next duel in {seconds}s</p>
+        <button type="button" className="mc-btn mc-btn-md" onClick={onHold} aria-label="Hold: stay on this position">
+          <Pause size={16} aria-hidden="true" /> Hold
         </button>
       </div>
-      <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-[#00000022]">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-[#8a6522] via-[#d8b163] to-[#8a6522] transition-[width] duration-100 ease-linear"
-          style={{ width: `${ratio * 100}%` }}
-        />
+      <div className="mc-countdown-track" aria-hidden="true">
+        <div className="mc-countdown-fill" style={{ width: `${ratio * 100}%` }} />
       </div>
     </div>
   );

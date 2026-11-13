@@ -1,13 +1,12 @@
-import { useState } from "react";
-import { APP_NAME } from "../brand";
-import type { PlayerStats } from "../core/stats";
-import { RecordStrip } from "./RecordStrip";
-import { Clapperboard, Crown, Glasses, Settings as SettingsIcon, Swords, Users } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
+import { Clapperboard, Eye, Glasses, Play, Settings as SettingsIcon, Swords, Users } from "lucide-react";
 
+import { APP_NAME, TAGLINE } from "../brand";
+import type { PlayerStats } from "../core/stats";
 import type { DemoOptions, Difficulty, Faction } from "../core/types";
 import { Crest } from "./Heraldry";
-import { useHasKeyboard } from "./inputMode";
 import { MusterSection, type MusterChoice } from "./Muster";
+import { RecordStrip } from "./RecordStrip";
 
 export interface MatchConfig {
   mode: "ai" | "hotseat" | "demo";
@@ -31,11 +30,20 @@ interface MainMenuProps {
   stats?: PlayerStats;
 }
 
-const DIFFICULTY_COPY: Record<Difficulty, string> = {
-  easy: "Squire — plays fast and loose",
-  medium: "Knight — thinks three moves deep",
-  hard: "Warlord — full search, no mercy",
-};
+type Mode = MatchConfig["mode"];
+
+const MODES: { mode: Mode; label: string; name: string; icon: ReactNode }[] = [
+  { mode: "ai", label: "Computer", name: "Play the computer", icon: <Swords size={18} aria-hidden="true" /> },
+  { mode: "hotseat", label: "Friend", name: "Play a friend on this device", icon: <Users size={18} aria-hidden="true" /> },
+  { mode: "demo", label: "Watch", name: "Watch the computer play itself", icon: <Clapperboard size={18} aria-hidden="true" /> },
+];
+
+const LEVELS: Difficulty[] = ["easy", "medium", "hard"];
+
+/** The engine's three strengths, named in the game's own ranks. */
+const STRENGTH_NAME: Record<Difficulty, string> = { easy: "Squire", medium: "Knight", hard: "Warlord" };
+
+const SIDE_NAME: Record<Faction, string> = { w: "Ivory", b: "Obsidian" };
 
 const DEMO_SPEEDS: { label: string; value: number }[] = [
   { label: "0.5×", value: 0.5 },
@@ -44,11 +52,11 @@ const DEMO_SPEEDS: { label: string; value: number }[] = [
   { label: "4×", value: 4 },
 ];
 
-const CLOCKS: { label: string; value: number | null }[] = [
-  { label: "None", value: null },
-  { label: "5 min", value: 5 },
-  { label: "10 min", value: 10 },
-  { label: "15 min", value: 15 },
+const CLOCKS: { label: string; name: string; value: number | null }[] = [
+  { label: "Off", name: "No clock", value: null },
+  { label: "5 min", name: "5 minutes each", value: 5 },
+  { label: "10 min", name: "10 minutes each", value: 10 },
+  { label: "15 min", name: "15 minutes each", value: 15 },
 ];
 
 export function MainMenu({
@@ -61,15 +69,14 @@ export function MainMenu({
   onStartMixedReality,
   stats,
 }: MainMenuProps) {
-  const hasKeyboard = useHasKeyboard();
-  const [tab, setTab] = useState<"ai" | "hotseat" | "demo">("ai");
+  const [tab, setTab] = useState<Mode>("ai");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [playerColor, setPlayerColor] = useState<Faction>("w");
   const [clock, setClock] = useState<number | null>(null);
   const [demoWhite, setDemoWhite] = useState<Difficulty>("medium");
   const [demoBlack, setDemoBlack] = useState<Difficulty>("hard");
-  const [demoSpeed, setDemoSpeed] = useState(1);
-  const [demoLoop, setDemoLoop] = useState(true);
+  const [demoSpeed, setDemoSpeed] = useState<number>(1);
+  const [demoLoop, setDemoLoop] = useState<boolean>(true);
 
   const config = (): MatchConfig => ({
     mode: tab,
@@ -79,253 +86,233 @@ export function MainMenu({
     demo: tab === "demo" ? { white: demoWhite, black: demoBlack, speed: demoSpeed, autoRematch: demoLoop } : undefined,
   });
   const start = (): void => onStart(config());
+  const record = stats && stats.total.wins + stats.total.losses + stats.total.draws > 0 ? stats : null;
 
   return (
     <div
       className="mc-menu mc-modal-pad pointer-events-auto absolute inset-0 flex flex-col items-center justify-center overflow-hidden"
+      data-attract={attract}
       onPointerDown={onInteract}
       onPointerMove={onInteract}
     >
-      <div className="mc-unfurl mc-menu-hero mb-6 shrink-0 text-center">
-        <p className="mc-display text-[0.68rem] tracking-[0.55em] text-[#c8ab74]">Anno Domini MCDXCII</p>
-        <h1 className="mc-display mc-title-glow mt-2 text-5xl font-bold text-[#f4e3bd] sm:text-6xl">
-          {APP_NAME.toUpperCase()}
-        </h1>
-        <div className="mc-rule mx-auto mt-3 w-64" />
-        <p className="mt-3 text-sm italic text-[#c5b28d]">
-          {attract ? "An AI vs AI duel is under way — move to take the hall" : "Chess in the great hall of Aldermoor"}
-        </p>
-      </div>
+      <div className="mc-menu-card mc-rise">
+        <div className="mc-menu-lead">
+          <header className="mc-menu-head">
+            <h1 className="mc-wordmark mc-menu-mark">{APP_NAME}</h1>
+            <p className="mc-menu-tagline">{TAGLINE}</p>
+          </header>
 
-      <div className="mc-slate mc-goldleaf mc-rise flex w-full min-h-0 max-w-md flex-col p-5 sm:p-6">
-        <div className="mb-5 grid shrink-0 grid-cols-3 gap-2">
-          <button
-            type="button"
-            className="mc-chip flex items-center justify-center gap-1.5 px-1 py-3"
-            data-active={tab === "ai"}
-            onClick={() => setTab("ai")}
-          >
-            <Swords size={14} /> Computer
-          </button>
-          <button
-            type="button"
-            className="mc-chip flex items-center justify-center gap-1.5 px-1 py-3"
-            data-active={tab === "hotseat"}
-            onClick={() => setTab("hotseat")}
-          >
-            <Users size={14} /> 2 Players
-          </button>
-          <button
-            type="button"
-            className="mc-chip flex items-center justify-center gap-1.5 px-1 py-3"
-            data-active={tab === "demo"}
-            onClick={() => setTab("demo")}
-          >
-            <Clapperboard size={14} /> AI vs AI
-          </button>
-        </div>
-
-        <div className="mc-scroll -mr-2 min-h-0 flex-auto overflow-y-auto pr-2">
-        {tab === "ai" ? (
-          <div className="mc-fade space-y-5">
-            <div>
-              <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Opponent</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(["easy", "medium", "hard"] as Difficulty[]).map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    className="mc-chip py-2.5"
-                    data-active={difficulty === level}
-                    onClick={() => setDifficulty(level)}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-xs italic text-[#9c8b6c]">{DIFFICULTY_COPY[difficulty]}</p>
+          {record ? (
+            <div className="mc-menu-record">
+              <RecordStrip stats={record} />
             </div>
+          ) : null}
 
-            <div>
-              <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Your banner</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(["w", "b"] as Faction[]).map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className="mc-chip flex items-center justify-center gap-2 py-2.5"
-                    data-active={playerColor === color}
-                    onClick={() => setPlayerColor(color)}
-                  >
-                    <Crest faction={color} size={18} active={playerColor === color} />
-                    {color === "w" ? "Ivory" : "Obsidian"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : tab === "hotseat" ? (
-          <p className="mc-fade text-sm italic leading-relaxed text-[#b7a88a]">
-            Two commanders, one board. The view holds its angle between turns —{" "}
-            {hasKeyboard ? (
-              <>
-                flip it whenever you like with <span className="mc-display text-[#e2c98f]">F</span>, or
-              </>
-            ) : (
-              <>flip it whenever you like from the camera menu, or</>
-            )}{" "}
-            switch on the automatic swing in settings.
-          </p>
-        ) : (
-          <div className="mc-fade space-y-5">
-            <p className="text-sm italic leading-relaxed text-[#b7a88a]">
-              Two AI commanders duel on their own while the camera drifts around the hall — made for watching and for
-              capturing footage.{" "}
-              {hasKeyboard ? (
-                <>
-                  Press <span className="mc-display text-[#e2c98f]">C</span> in the match to hide the whole interface.
-                </>
-              ) : (
-                <>Tap the clean-capture sigil in the match to hide the whole interface.</>
-              )}
-            </p>
-
-            <div>
-              <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Ivory engine</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(["easy", "medium", "hard"] as Difficulty[]).map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    className="mc-chip py-2.5"
-                    data-active={demoWhite === level}
-                    onClick={() => setDemoWhite(level)}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Obsidian engine</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(["easy", "medium", "hard"] as Difficulty[]).map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    className="mc-chip py-2.5"
-                    data-active={demoBlack === level}
-                    onClick={() => setDemoBlack(level)}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Pace</p>
-              <div className="grid grid-cols-4 gap-2">
-                {DEMO_SPEEDS.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    className="mc-chip py-2.5"
-                    data-active={demoSpeed === option.value}
-                    onClick={() => setDemoSpeed(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+          <div className="mc-menu-actions">
+            {onStartMixedReality ? (
+              <button
+                type="button"
+                className="mc-btn mc-btn-primary mc-btn-lg mc-menu-xr"
+                onClick={() => onStartMixedReality(config())}
+              >
+                <Glasses size={20} aria-hidden="true" /> Play on your table
+              </button>
+            ) : null}
             <button
               type="button"
-              className="mc-chip flex w-full items-center justify-between px-3 py-2.5"
-              data-active={demoLoop}
-              onClick={() => setDemoLoop((loop) => !loop)}
-              aria-pressed={demoLoop}
+              className={`mc-btn mc-btn-lg ${onStartMixedReality ? "mc-btn-gold-outline" : "mc-btn-primary"}`}
+              onClick={start}
+              aria-label={tab === "demo" ? "Start watching" : onStartMixedReality ? "Play on screen" : "Play"}
             >
-              <span>Loop new duels</span>
-              <span className="mc-display text-[0.62rem] tracking-[0.24em]">{demoLoop ? "ON" : "OFF"}</span>
+              {tab === "demo" ? (
+                <>
+                  <Eye size={20} aria-hidden="true" /> Watch
+                </>
+              ) : (
+                <>
+                  <Play size={20} aria-hidden="true" /> Play
+                </>
+              )}
+            </button>
+            <button type="button" className="mc-btn mc-btn-lg mc-menu-settings" onClick={onOpenSettings}>
+              <SettingsIcon size={18} aria-hidden="true" /> Settings
             </button>
           </div>
-        )}
-
-        {tab === "demo" ? null : (
-          <div className="mt-5">
-            <p className="mc-display mb-2 text-[0.62rem] tracking-[0.3em] text-[#a89268]">Hourglass</p>
-            <div className="grid grid-cols-4 gap-2">
-              {CLOCKS.map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  className="mc-chip py-2.5"
-                  data-active={clock === option.value}
-                  onClick={() => setClock(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="mc-rule my-5" />
-
-        <MusterSection choice={muster} onChange={onMuster} />
         </div>
 
-        {stats ? (
-          <div className="mt-4 shrink-0 text-center">
-            <RecordStrip stats={stats} tone="dark" />
+        <div className="mc-menu-setup">
+          <div className="mc-seg" role="group" aria-label="Game mode">
+            {MODES.map((entry) => (
+              <button
+                key={entry.mode}
+                type="button"
+                className="mc-seg-btn"
+                data-active={tab === entry.mode}
+                aria-pressed={tab === entry.mode}
+                aria-label={entry.name}
+                onClick={() => setTab(entry.mode)}
+              >
+                {entry.icon}
+                <span>{entry.label}</span>
+              </button>
+            ))}
           </div>
-        ) : null}
-        <div className="mc-panel-foot mc-actions mt-5 shrink-0">
-        {onStartMixedReality ? (
-          <button
-            type="button"
-            className="mc-btn mc-btn-primary mc-btn-xr flex items-center justify-center gap-2"
-            onClick={() => onStartMixedReality(config())}
-          >
-            <Glasses size={16} /> Play on your table
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="mc-btn mc-btn-primary flex items-center justify-center gap-2"
-          onClick={start}
-        >
-          {tab === "demo" ? (
-            <>
-              <Clapperboard size={15} /> Start AI vs AI
-            </>
-          ) : (
-            <>
-              <Crown size={15} /> Take the field
-            </>
-          )}
-        </button>
 
-        <button
-          type="button"
-          className="mc-btn flex items-center justify-center gap-2"
-          onClick={onOpenSettings}
-        >
-          <SettingsIcon size={14} /> Settings
-        </button>
+          <div className="mc-menu-scroll mc-scroll mc-scroll-shade">
+            {tab === "ai" ? (
+              <>
+                <OptionGroup label="Strength">
+                  {LEVELS.map((level) => (
+                    <Option
+                      key={level}
+                      active={difficulty === level}
+                      name={`${STRENGTH_NAME[level]} (${level})`}
+                      onClick={() => setDifficulty(level)}
+                    >
+                      {STRENGTH_NAME[level]}
+                    </Option>
+                  ))}
+                </OptionGroup>
+
+                <OptionGroup label="Your side" columns={2}>
+                  {(["w", "b"] as Faction[]).map((color) => (
+                    <Option
+                      key={color}
+                      active={playerColor === color}
+                      name={`Play as ${SIDE_NAME[color]}${color === "w" ? " (moves first)" : ""}`}
+                      onClick={() => setPlayerColor(color)}
+                    >
+                      <Crest faction={color} size={20} active={playerColor === color} />
+                      {SIDE_NAME[color]}
+                    </Option>
+                  ))}
+                </OptionGroup>
+              </>
+            ) : null}
+
+            {tab === "demo" ? (
+              <>
+                <OptionGroup label="Ivory" marker={<SideMark side="w" />}>
+                  {LEVELS.map((level) => (
+                    <Option
+                      key={level}
+                      active={demoWhite === level}
+                      name={`Ivory engine: ${STRENGTH_NAME[level]} (${level})`}
+                      onClick={() => setDemoWhite(level)}
+                    >
+                      {STRENGTH_NAME[level]}
+                    </Option>
+                  ))}
+                </OptionGroup>
+
+                <OptionGroup label="Obsidian" marker={<SideMark side="b" />}>
+                  {LEVELS.map((level) => (
+                    <Option
+                      key={level}
+                      active={demoBlack === level}
+                      name={`Obsidian engine: ${STRENGTH_NAME[level]} (${level})`}
+                      onClick={() => setDemoBlack(level)}
+                    >
+                      {STRENGTH_NAME[level]}
+                    </Option>
+                  ))}
+                </OptionGroup>
+
+                <OptionGroup label="Speed" columns={4}>
+                  {DEMO_SPEEDS.map((option) => (
+                    <Option
+                      key={option.label}
+                      active={demoSpeed === option.value}
+                      name={`Speed ${option.label}`}
+                      onClick={() => setDemoSpeed(option.value)}
+                    >
+                      {option.label}
+                    </Option>
+                  ))}
+                </OptionGroup>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={demoLoop}
+                  className="mc-switch-row"
+                  onClick={() => setDemoLoop((loop) => !loop)}
+                >
+                  <span>Loop duels</span>
+                  <span className="mc-switch" data-on={demoLoop} aria-hidden="true">
+                    <span className="mc-switch-knob" />
+                  </span>
+                </button>
+              </>
+            ) : (
+              <OptionGroup label="Clock" columns={4}>
+                {CLOCKS.map((option) => (
+                  <Option
+                    key={option.label}
+                    active={clock === option.value}
+                    name={option.name}
+                    onClick={() => setClock(option.value)}
+                  >
+                    {option.label}
+                  </Option>
+                ))}
+              </OptionGroup>
+            )}
+
+            <MusterSection choice={muster} onChange={onMuster} />
+          </div>
         </div>
       </div>
-
-      {/* The hall is driven differently by a finger than by a mouse, so the
-          standing instruction names only the gestures this device actually has. */}
-      <p className="mc-menu-hint mt-5 shrink-0 text-[0.68rem] tracking-[0.2em] text-[#7d6f57]">
-        {hasKeyboard
-          ? "DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A FIGURE TO COMMAND IT"
-          : "DRAG TO ORBIT · PINCH TO ZOOM · TAP A FIGURE TO COMMAND IT"}
-      </p>
     </div>
   );
+}
+
+/** A labelled row of mutually exclusive choices. */
+function OptionGroup({
+  label,
+  marker,
+  columns = 3,
+  children,
+}: {
+  label: string;
+  marker?: ReactNode;
+  columns?: 2 | 3 | 4;
+  children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div className="mc-field">
+      <p id={id} className="mc-label">
+        {marker}
+        {label}
+      </p>
+      <div className="mc-options" data-columns={columns} role="group" aria-labelledby={id}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Option({
+  active,
+  name,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  /** Accessible name; always contains the visible label. */
+  name: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" className="mc-option" data-active={active} aria-pressed={active} aria-label={name} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+/** The side's colour code, matching the band painted under its figures. */
+function SideMark({ side }: { side: Faction }) {
+  return <span className="mc-side-dot" data-side={side} aria-hidden="true" />;
 }

@@ -1,6 +1,11 @@
 /* ------------------------------------------------------------------
    Siegemate — UI skin.
-   Parchment, forged brass and gold leaf over the 3D hall.
+   Calm, flat chrome over the 3D hall: one sans-serif face (Inter), a dark
+   neutral panel, and gold kept for what matters — the wordmark, the choice
+   you have made and the button that starts the game. Built for Quest
+   Browser's flat window first (≈1000×625, read from a metre away), so text
+   is never under 14px, controls never under 48px and the primary action
+   never under 60px.
    ------------------------------------------------------------------ */
 
 :root {
@@ -15,29 +20,64 @@
   --mc-safe-bottom: env(safe-area-inset-bottom, 0px);
   --mc-safe-left: env(safe-area-inset-left, 0px);
 
-  --ink: #23180d;
-  --ink-soft: #4a3a24;
-  --parchment-1: #efe2c4;
-  --parchment-2: #dcc9a2;
-  --parchment-3: #c9b183;
-  --gold: #d8b163;
-  --gold-bright: #f6dfa5;
-  --gold-deep: #8a6522;
-  --basalt: #14151a;
-  --basalt-soft: #1e2027;
-  --crimson: #a8342a;
-  --royal: #3c5fa8;
+  /* The palette — every interface colour comes from here. Contrast on the
+     panel: text 14.7:1, secondary text 7.1:1, gold 9.5:1 (and the panel colour
+     on gold, for text on a gold button, is the same 9.5:1), azure 7.4:1,
+     ember 6.4:1, danger 5.0:1, a control's outline 3.3:1. */
+  --mc-panel: #15171c;
+  --mc-surface: #1e2128;
+  --mc-surface-hover: #272b33;
+  --mc-line: #2e323b;
+  /* Outline of anything you can press: 3:1 against the panel it sits on. */
+  --mc-line-strong: #646a77;
+  --mc-text: #eee8da;
+  --mc-text-2: #a9a396;
+  --mc-gold: #e0b75a;
+  --mc-gold-hover: #ebc673;
+  --mc-gold-tint: rgba(224, 183, 90, 0.14);
+  --mc-on-gold: #15171c;
+  --mc-azure: #6ea8ff;
+  --mc-ember: #ff6a55;
+  --mc-danger: #e5574b;
+
+  --mc-font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* The wordmark and the result headline only. */
+  --mc-font-mark: "Cinzel", Georgia, serif;
 }
 
 .mc-root {
-  font-family: "Crimson Pro", Georgia, "Times New Roman", serif;
-  color: #f2e6cf;
+  font-family: var(--mc-font-ui);
+  color: var(--mc-text);
   -webkit-font-smoothing: antialiased;
+  /* No italics anywhere in the interface: only upright Inter is shipped, and
+     with synthesis off an `italic` class anywhere renders upright instead of
+     as a slanted fake. */
+  font-synthesis-style: none;
 }
 
+/* Labels and names. Once a display serif, now the interface face in small
+   capitals — the tracked caps the in-match panels were laid out for, legible. */
 .mc-display {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
+  font-weight: 600;
+  text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* The SIEGEMATE wordmark wherever it appears (the loading screen still marks it
+   with the older `mc-title-glow`), and the headline on the result card. */
+.mc-wordmark,
+.mc-title-glow {
+  font-family: var(--mc-font-mark);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mc-root button:focus-visible,
+.mc-root [role="switch"]:focus-visible {
+  outline: 2px solid var(--mc-gold);
+  outline-offset: 2px;
 }
 
 .mc-canvas-wrap {
@@ -126,121 +166,57 @@
     calc(1.5rem + var(--mc-safe-bottom)) calc(1.25rem + var(--mc-safe-left));
 }
 
+@media (max-width: 480px) {
+  .mc-modal-pad {
+    padding: calc(1rem + var(--mc-safe-top)) calc(1rem + var(--mc-safe-right)) calc(1rem + var(--mc-safe-bottom))
+      calc(1rem + var(--mc-safe-left));
+  }
+}
+
 /* ------------------------------------------------------------ surfaces */
 
-.mc-parchment {
-  position: relative;
-  background:
-    radial-gradient(120% 90% at 20% 0%, rgba(255, 249, 232, 0.85) 0%, rgba(0, 0, 0, 0) 55%),
-    linear-gradient(160deg, var(--parchment-1) 0%, var(--parchment-2) 55%, var(--parchment-3) 100%);
-  color: var(--ink);
-  border: 1px solid rgba(102, 72, 26, 0.55);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.65),
-    inset 0 0 40px rgba(120, 87, 33, 0.28),
-    inset 0 1px 0 rgba(255, 253, 240, 0.7);
-  border-radius: 4px;
-}
-
-.mc-parchment::after {
-  content: "";
-  position: absolute;
-  inset: 5px;
-  border: 1px solid rgba(138, 101, 34, 0.45);
-  border-radius: 2px;
-  pointer-events: none;
-}
-
+/* Every floating panel. Nearly opaque, so text on it keeps its contrast over
+   the brightest battleground; a hairline instead of a gilt frame. */
 .mc-slate {
-  background: linear-gradient(165deg, rgba(26, 27, 33, 0.94), rgba(12, 13, 17, 0.96));
-  border: 1px solid rgba(216, 177, 99, 0.28);
-  box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 226, 170, 0.09);
-  border-radius: 6px;
-  backdrop-filter: blur(7px);
-}
-
-/* Animated gold-leaf border for hero panels. */
-.mc-goldleaf {
-  position: relative;
-}
-
-.mc-goldleaf::before {
-  content: "";
-  position: absolute;
-  inset: -1.5px;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: linear-gradient(
-    115deg,
-    rgba(138, 101, 34, 0.2) 0%,
-    var(--gold) 22%,
-    var(--gold-bright) 34%,
-    var(--gold-deep) 48%,
-    var(--gold) 68%,
-    rgba(138, 101, 34, 0.2) 100%
-  );
-  background-size: 260% 100%;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: mc-leaf 9s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes mc-leaf {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 260% 50%;
-  }
+  background: rgba(21, 23, 28, 0.95);
+  border: 1px solid var(--mc-line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
 }
 
 /* ------------------------------------------------------------- controls */
 
 .mc-btn {
   position: relative;
-  font-family: "Cinzel", Georgia, serif;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--mc-font-ui);
+  font-size: 1rem;
   font-weight: 600;
-  color: #f7ead0;
-  padding: 0.72rem 1.4rem;
-  border-radius: 3px;
-  border: 1px solid rgba(216, 177, 99, 0.45);
-  background: linear-gradient(180deg, #35302a 0%, #201d19 55%, #16130f 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 226, 170, 0.22),
-    inset 0 -8px 18px rgba(0, 0, 0, 0.45),
-    0 6px 18px rgba(0, 0, 0, 0.5);
+  line-height: 1.2;
+  color: var(--mc-text);
+  padding: 0.75rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-surface);
   transition:
-    transform 140ms cubic-bezier(0.2, 1.4, 0.4, 1),
-    box-shadow 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
   cursor: pointer;
 }
 
 .mc-btn:hover:not(:disabled) {
-  color: #fff6e2;
-  border-color: rgba(246, 223, 165, 0.85);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 205, 0.3),
-    0 10px 26px rgba(0, 0, 0, 0.55),
-    0 0 22px rgba(216, 177, 99, 0.22);
+  background: var(--mc-surface-hover);
+  border-color: #8a909c;
 }
 
 .mc-btn:active:not(:disabled) {
-  transform: translateY(1px) scale(0.985);
-  box-shadow:
-    inset 0 3px 10px rgba(0, 0, 0, 0.7),
-    0 2px 8px rgba(0, 0, 0, 0.5);
+  transform: translateY(1px);
 }
 
 .mc-btn:disabled {
@@ -248,70 +224,68 @@
   cursor: not-allowed;
 }
 
+/* The one solid gold thing on a screen: the action that starts play. */
 .mc-btn-primary {
-  background: linear-gradient(180deg, #6d4f1c 0%, #4a3512 55%, #2e2109 100%);
-  border-color: rgba(246, 223, 165, 0.6);
-  color: #fff4dc;
+  background: var(--mc-gold);
+  border-color: var(--mc-gold);
+  color: var(--mc-on-gold);
+}
+
+.mc-btn-primary:hover:not(:disabled) {
+  background: var(--mc-gold-hover);
+  border-color: var(--mc-gold-hover);
+}
+
+/* A strong second choice next to a gold one: outlined in gold, not filled. */
+.mc-btn-gold-outline {
+  border-color: var(--mc-gold);
+  color: var(--mc-text);
+}
+
+.mc-btn-gold-outline:hover:not(:disabled) {
+  background: var(--mc-gold-tint);
+  border-color: var(--mc-gold-hover);
+}
+
+/* Quiet: text and icon only, the outline appears on hover. */
+.mc-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--mc-text-2);
+}
+
+.mc-btn-ghost:hover:not(:disabled) {
+  background: var(--mc-surface);
+  border-color: var(--mc-line-strong);
+  color: var(--mc-text);
 }
 
 .mc-btn-danger {
-  background: linear-gradient(180deg, #58231d 0%, #3a1712 60%, #240d0a 100%);
-  border-color: rgba(214, 106, 88, 0.5);
+  background: rgba(229, 87, 75, 0.14);
+  border-color: rgba(229, 87, 75, 0.6);
+  color: #f19287;
+}
+
+.mc-btn-danger:hover:not(:disabled) {
+  background: rgba(229, 87, 75, 0.24);
+  border-color: var(--mc-danger);
 }
 
 .mc-btn[data-active="true"] {
-  color: #1a1408;
-  border-color: rgba(246, 223, 165, 0.9);
-  background: linear-gradient(180deg, rgba(216, 177, 99, 0.95), rgba(138, 101, 34, 0.95));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 245, 215, 0.4),
-    0 0 18px rgba(216, 177, 99, 0.4);
+  color: var(--mc-on-gold);
+  border-color: var(--mc-gold);
+  background: var(--mc-gold);
 }
 
-/* The menu's two standing actions.
-
-   A button is not a banner. Stretched across the panel they were 400px wide,
-   and measuring the labels against the real Cinzel metrics, the crown plus
-   "TAKE THE FIELD" is 156px of ink and the cog plus "SETTINGS" only 93px — 39%
-   and 23% of the button, so both labels sat marooned in the middle of a bar
-   with a quarter-metre of empty gold around them. The column is therefore
-   capped just past the widest label rather than following the panel, and its
-   type, padding and gap all scale with the viewport so that ratio survives a
-   phone as well as a desktop.
-
-   They now sit side by side rather than stacked. Two full-width bars read as a
-   list of two equal options; a pair reads as one decision — go, or go and set
-   things up first — and the row costs one button's height instead of two, which
-   is the height the muster panel above it wanted back. The columns are a strict
-   `1fr 1fr`, not `auto`: sized to their labels the settings button would be
-   little over half the width of the primary, and two different widths make the
-   pair read as two unrelated controls. 26rem is the cap, because half of it less
-   the gap is 200px and the widest label — crown plus "TAKE THE FIELD" — is
-   156px of ink. */
-.mc-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: stretch;
-  justify-content: center;
-  width: 100%;
-  max-width: 26rem;
-  margin-inline: auto;
-  gap: clamp(0.4rem, 1vw, 0.6rem);
+/* Target sizes: 60px for a primary action, 48px for everything else. */
+.mc-btn-lg {
+  min-height: 3.75rem;
+  padding-block: 0.875rem;
+  font-size: 1.0625rem;
 }
 
-.mc-actions .mc-btn {
-  width: 100%;
-  padding: clamp(0.46rem, 1vh + 0.15rem, 0.66rem) 0.75rem;
-  /* Still a 44px touch target once the padding tightens on a short screen. */
-  min-height: 2.75rem;
-  font-size: clamp(0.66rem, 0.58rem + 0.24vw, 0.76rem);
-}
-
-/* The primary keeps the hierarchy in weight and type size, not in width — two
-   different widths would make the pair read as two unrelated controls. */
-.mc-actions .mc-btn-primary {
-  font-size: clamp(0.72rem, 0.62rem + 0.3vw, 0.84rem);
-  letter-spacing: 0.13em;
+.mc-btn-md {
+  min-height: 3rem;
 }
 
 .mc-icon-btn {
@@ -320,30 +294,29 @@
   display: grid;
   place-items: center;
   padding: 0;
-  border-radius: 3px;
+  border-radius: 10px;
 }
 
 .mc-chip {
-  font-family: "Cinzel", Georgia, serif;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--mc-font-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   padding: 0.42rem 0.85rem;
-  border-radius: 2px;
-  border: 1px solid rgba(216, 177, 99, 0.35);
-  background: rgba(20, 18, 15, 0.65);
-  color: #e6d3ab;
+  border-radius: 8px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-surface);
+  color: var(--mc-text);
   cursor: pointer;
   transition:
-    background 160ms ease,
-    color 160ms ease,
-    border-color 160ms ease,
-    transform 140ms cubic-bezier(0.2, 1.4, 0.4, 1);
+    background-color 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
 }
 
 .mc-chip:hover {
-  transform: translateY(-1px);
-  border-color: rgba(246, 223, 165, 0.7);
+  background: var(--mc-surface-hover);
+  border-color: #8a909c;
 }
 
 /* Camera dropdown — anchored under the top bar, never over the board. */
@@ -371,8 +344,7 @@
 }
 
 .mc-cam-menu .mc-chip:hover {
-  transform: translateX(2px);
-  background: rgba(216, 177, 99, 0.14);
+  background: var(--mc-surface-hover);
 }
 
 .mc-chip-flip .mc-flip-icon {
@@ -383,11 +355,13 @@
   transform: rotate(180deg) scale(0.9);
 }
 
+/* One selection language everywhere: a gold outline over a gold-tinted fill.
+   Solid gold is reserved for the button that starts play. */
 .mc-chip[data-active="true"] {
-  background: linear-gradient(180deg, rgba(216, 177, 99, 0.95), rgba(138, 101, 34, 0.95));
-  color: #1a1408;
-  border-color: rgba(246, 223, 165, 0.9);
-  box-shadow: 0 0 18px rgba(216, 177, 99, 0.35);
+  background: var(--mc-gold-tint);
+  color: var(--mc-text);
+  border-color: var(--mc-gold);
+  box-shadow: inset 0 0 0 1px var(--mc-gold);
 }
 
 /* --------------------------------------------------- chronicle corner */
@@ -456,7 +430,7 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.56rem;
   letter-spacing: 0.02em;
   color: #1c1508;
@@ -522,7 +496,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.4rem;
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.46rem;
   letter-spacing: 0.28em;
   text-transform: uppercase;
@@ -573,7 +547,7 @@
 }
 
 .mc-tally-name {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.56rem;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -589,7 +563,7 @@
   gap: 0.16rem;
   min-width: 1.6rem;
   justify-content: flex-end;
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.68rem;
   color: #dfa08d;
   font-variant-numeric: tabular-nums;
@@ -597,7 +571,7 @@
 }
 
 .mc-tally-time {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.7rem;
   min-width: 2.5rem;
   text-align: right;
@@ -642,29 +616,15 @@
 
 /* ------------------------------------------------------------ animation */
 
+/* Panels arrive with a short, plain rise — no overshoot. */
 @keyframes mc-rise {
   from {
     opacity: 0;
-    transform: translateY(26px) scale(0.97);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes mc-unfurl {
-  0% {
-    opacity: 0;
-    transform: scaleY(0.05) translateY(-30px);
-  }
-  60% {
-    opacity: 1;
-    transform: scaleY(1.04) translateY(0);
-  }
-  100% {
-    opacity: 1;
-    transform: scaleY(1) translateY(0);
+    transform: translateY(0);
   }
 }
 
@@ -694,32 +654,34 @@
 }
 
 .mc-rise {
-  animation: mc-rise 460ms cubic-bezier(0.18, 1.2, 0.35, 1) both;
-}
-
-.mc-unfurl {
-  transform-origin: top center;
-  animation: mc-unfurl 900ms cubic-bezier(0.2, 1.1, 0.3, 1) both;
+  animation: mc-rise 280ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
 .mc-fade {
-  animation: mc-fade 520ms ease both;
+  animation: mc-fade 240ms ease both;
 }
 
 .mc-pulse {
   animation: mc-pulse 1.6s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .mc-rise,
+  .mc-fade {
+    animation: none;
+  }
+}
+
 /* --------------------------------------------------------------- detail */
 
 .mc-rule {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(216, 177, 99, 0.75), transparent);
+  background: var(--mc-line);
 }
 
 .mc-history {
   scrollbar-width: thin;
-  scrollbar-color: rgba(138, 101, 34, 0.8) transparent;
+  scrollbar-color: #4a505b transparent;
 }
 
 .mc-history::-webkit-scrollbar {
@@ -727,7 +689,7 @@
 }
 
 .mc-history::-webkit-scrollbar-thumb {
-  background: rgba(138, 101, 34, 0.7);
+  background: #4a505b;
   border-radius: 3px;
 }
 
@@ -738,26 +700,24 @@
 .mc-scroll {
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(216, 177, 99, 0.55) transparent;
+  scrollbar-color: #4a505b transparent;
 }
 
 .mc-scroll::-webkit-scrollbar {
-  width: 7px;
+  width: 8px;
 }
 
 .mc-scroll::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.32);
-  border-radius: 4px;
+  background: transparent;
 }
 
 .mc-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(246, 223, 165, 0.85), rgba(138, 101, 34, 0.85));
+  background: #4a505b;
   border-radius: 4px;
-  border: 1px solid rgba(20, 18, 15, 0.6);
 }
 
 .mc-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #f6dfa5, #b8873a);
+  background: #646a77;
 }
 
 /* Soft cut-off at the top/bottom of a scrolling body so clipped rows read as
@@ -771,64 +731,8 @@
     transparent 100%
   );
   mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
-}
-
-/* Gold hairline + shadow that marks the pinned footer of a scrolling panel. */
-.mc-panel-foot {
-  position: relative;
-}
-
-.mc-panel-foot::before {
-  content: "";
-  position: absolute;
-  left: -0.35rem;
-  right: -0.35rem;
-  top: 0;
-  height: 18px;
-  transform: translateY(-100%);
-  background: linear-gradient(to top, rgba(10, 11, 15, 0.92), rgba(10, 11, 15, 0));
-  pointer-events: none;
-}
-
-/* The hero title yields space first on short viewports. */
-@media (max-height: 780px) {
-  .mc-menu-hero {
-    margin-bottom: 1rem;
-  }
-
-  .mc-menu-hero h1 {
-    font-size: 2.5rem;
-  }
-
-  .mc-menu-hint {
-    display: none;
-  }
-}
-
-/* Below this the two columns stop being able to hold their labels on one line,
-   and a wrapped "TAKE THE / FIELD" is worse than a stack. */
-@media (max-width: 400px) {
-  .mc-actions {
-    grid-template-columns: 1fr;
-    max-width: 16rem;
-    gap: clamp(0.35rem, 0.9vh, 0.55rem);
-  }
-}
-
-@media (max-height: 620px) {
-
-  .mc-menu-hero p:last-child,
-  .mc-menu-hero .mc-rule {
-    display: none;
-  }
-
-  .mc-menu-hero h1 {
-    font-size: 1.9rem;
-  }
-
-  .mc-menu-hero {
-    margin-bottom: 0.6rem;
-  }
+  /* At rest the first row starts below the fade, not half inside it. */
+  padding-top: 12px;
 }
 
 /* --------------------------------------------- phone: hand-sized interface */
@@ -943,7 +847,7 @@
 }
 
 .mc-ledger-no {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.6rem;
   letter-spacing: 0.04em;
   color: #7b6c53;
@@ -957,7 +861,7 @@
   align-items: baseline;
   gap: 0.08rem;
   justify-content: flex-start;
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.78rem;
   letter-spacing: 0.02em;
   color: #e8d8b4;
@@ -1073,7 +977,7 @@
   gap: 0.22rem;
   padding: 0.22rem 0.5rem;
   border-radius: 999px;
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.52rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1184,171 +1088,89 @@
   }
 }
 
-/* Battleground picker: a swatch of each map above its name. */
+/* Army and battleground pickers: a painted card above its name, nothing more.
+
+   The palette gradient is the swatch's own background and stays *underneath*
+   the painting: while the art is still downloading — or if it never arrives at
+   all — the picker still reads as distinct liveries and grounds instead of a
+   row of empty holes. */
+.mc-army-card,
 .mc-arena-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.35rem 0.55rem;
-  border-radius: 3px;
-  border: 1px solid rgba(216, 177, 99, 0.3);
-  background: rgba(20, 18, 15, 0.6);
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0.375rem 0.375rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-surface);
+  color: var(--mc-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
   cursor: pointer;
   transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+    background-color 140ms ease,
+    border-color 140ms ease;
 }
 
+.mc-army-card:hover,
 .mc-arena-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(246, 223, 165, 0.7);
+  background: var(--mc-surface-hover);
+  border-color: #8a909c;
 }
 
+.mc-army-card[data-active="true"],
 .mc-arena-card[data-active="true"] {
-  border-color: rgba(246, 223, 165, 0.95);
-  background: rgba(216, 177, 99, 0.16);
-  box-shadow: inset 0 0 18px rgba(246, 223, 165, 0.14);
+  background: var(--mc-gold-tint);
+  border-color: var(--mc-gold);
+  box-shadow: inset 0 0 0 1px var(--mc-gold);
 }
 
-/*
- * The palette gradient is the swatch's own background and stays *underneath*
- * the painted card: while the art is still downloading — or if it never arrives
- * at all — the picker still reads as seven distinct grounds instead of seven
- * empty holes.
- */
+.mc-army-swatch,
 .mc-arena-swatch {
   position: relative;
+  display: block;
   width: 100%;
-  height: 3.3rem;
+  height: 3rem;
   overflow: hidden;
-  border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
 }
 
+/* Dimmed until chosen, so the choice is the one painting at full strength. */
+.mc-army-art,
 .mc-arena-art {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Knocked back so the gilt label stays the brightest thing in the card; the
-     chosen map is the only one that comes fully up. */
-  opacity: 0.8;
-  filter: saturate(0.88);
-  transition:
-    opacity 200ms ease,
-    transform 260ms cubic-bezier(0.2, 1.4, 0.4, 1),
-    filter 200ms ease;
+  filter: brightness(0.78) saturate(0.85);
+  transition: filter 160ms ease;
 }
 
+.mc-army-card:hover .mc-army-art,
 .mc-arena-card:hover .mc-arena-art {
-  opacity: 0.94;
-  transform: scale(1.05);
+  filter: brightness(0.92) saturate(0.95);
 }
 
+.mc-army-card[data-active="true"] .mc-army-art,
 .mc-arena-card[data-active="true"] .mc-arena-art {
-  opacity: 1;
-  filter: saturate(1.05);
+  filter: none;
 }
 
-/* A low shadow along the bottom edge, so a bright sky never sits under text. */
-.mc-arena-swatch::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(10, 8, 6, 0) 45%, rgba(10, 8, 6, 0.55) 100%);
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mc-arena-art,
-  .mc-arena-card:hover .mc-arena-art {
-    transform: none;
+@media (min-width: 760px) {
+  .mc-army-card,
+  .mc-arena-card {
+    font-size: 1rem;
   }
-}
 
-/* Army picker: one card per skin, a livery swatch above the name. */
-.mc-army-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.28rem;
-  padding: 0.4rem 0.3rem 0.45rem;
-  border-radius: 3px;
-  border: 1px solid rgba(216, 177, 99, 0.3);
-  background: rgba(20, 18, 15, 0.6);
-  cursor: pointer;
-  text-align: center;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
-}
-
-.mc-army-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(246, 223, 165, 0.7);
-}
-
-.mc-army-card[data-active="true"] {
-  border-color: rgba(246, 223, 165, 0.95);
-  background: rgba(216, 177, 99, 0.16);
-  box-shadow: inset 0 0 18px rgba(246, 223, 165, 0.14);
-}
-
-.mc-army-swatch {
-  position: relative;
-  width: 100%;
-  height: 2.5rem;
-  overflow: hidden;
-  border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 -5px 9px rgba(0, 0, 0, 0.3);
-}
-
-/* Same treatment as the battleground cards: the painting sits on top of the
-   livery gradient, knocked back so the army's name stays the brightest thing in
-   the card, and only the chosen army comes fully up. */
-.mc-army-art {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.78;
-  filter: saturate(0.88);
-  transition:
-    opacity 200ms ease,
-    transform 260ms cubic-bezier(0.2, 1.4, 0.4, 1),
-    filter 200ms ease;
-}
-
-.mc-army-card:hover .mc-army-art {
-  opacity: 0.94;
-  transform: scale(1.06);
-}
-
-.mc-army-card[data-active="true"] .mc-army-art {
-  opacity: 1;
-  filter: saturate(1.05);
-}
-
-/* A low shadow along the bottom edge, so a bright sky never sits under text. */
-.mc-army-swatch::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(10, 8, 6, 0) 42%, rgba(10, 8, 6, 0.6) 100%);
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mc-army-art,
-  .mc-army-card:hover .mc-army-art {
-    transform: none;
+  .mc-army-swatch,
+  .mc-arena-swatch {
+    height: 3.25rem;
   }
 }
 
@@ -1430,12 +1252,6 @@
   background:
     linear-gradient(102deg, rgba(226, 238, 250, 0.5) 0%, rgba(226, 238, 250, 0) 18%),
     linear-gradient(180deg, #3b4553 0%, #8c96a1 58%, #5c6058 100%);
-}
-
-.mc-title-glow {
-  text-shadow:
-    0 0 24px rgba(216, 177, 99, 0.55),
-    0 2px 0 rgba(0, 0, 0, 0.6);
 }
 
 .mc-danger-flash {
@@ -1623,7 +1439,7 @@
 }
 
 .mc-demo-flag {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: var(--mc-font-ui);
   font-size: 0.5rem;
   letter-spacing: 0.2em;
   color: #f0dfb6;
@@ -1662,14 +1478,11 @@
   gap: 0.16rem;
   width: max-content;
   max-width: min(15rem, calc(100vw - 2rem - var(--mc-safe-left) - var(--mc-safe-right)));
-  padding: 0.4rem 0.55rem;
-  border-radius: 3px;
-  border: 1px solid rgba(216, 177, 99, 0.5);
-  background: linear-gradient(180deg, rgba(38, 33, 27, 0.97) 0%, rgba(18, 16, 13, 0.97) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 226, 170, 0.16),
-    0 10px 26px rgba(0, 0, 0, 0.66);
-  backdrop-filter: blur(6px);
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-panel);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   animation: mc-tip-in 150ms cubic-bezier(0.2, 1.25, 0.35, 1) both;
 }
@@ -1701,7 +1514,7 @@
   height: 0.42rem;
   rotate: 45deg;
   background: inherit;
-  border: 1px solid rgba(216, 177, 99, 0.5);
+  border: 1px solid var(--mc-line-strong);
 }
 
 .mc-tip[data-side="bottom"]::before {
@@ -1725,33 +1538,32 @@
 }
 
 .mc-tip-label {
-  font-family: "Cinzel", Georgia, serif;
-  font-size: 0.62rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #f6e6c1;
+  font-family: var(--mc-font-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--mc-text);
   white-space: nowrap;
 }
 
 .mc-tip-hint {
-  font-family: "Crimson Pro", Georgia, serif;
-  font-size: 0.72rem;
-  line-height: 1.25;
-  color: #a89268;
+  font-family: var(--mc-font-ui);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--mc-text-2);
 }
 
 .mc-tip-key {
   position: absolute;
   top: 0.3rem;
   right: 0.4rem;
-  font-family: "Cinzel", Georgia, serif;
-  font-size: 0.5rem;
-  letter-spacing: 0.1em;
-  color: #d8b163;
-  padding: 0.06rem 0.26rem;
-  border-radius: 2px;
-  border: 1px solid rgba(216, 177, 99, 0.35);
-  background: rgba(216, 177, 99, 0.12);
+  font-family: var(--mc-font-ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--mc-gold);
+  padding: 0.06rem 0.3rem;
+  border-radius: 4px;
+  border: 1px solid rgba(224, 183, 90, 0.45);
+  background: var(--mc-gold-tint);
   white-space: nowrap;
 }
 
@@ -1852,4 +1664,590 @@
 .mc-slider:focus-visible::-webkit-slider-thumb {
   outline: 1px solid rgba(246, 223, 165, 0.9);
   outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ main menu
+
+   One card. On a phone it is a single column — the name, the choices (which
+   scroll), the record and the actions pinned at the foot. From 760px wide it
+   becomes two: the name, the record and the actions on the left, where they
+   are always in view, and the choices scrolling on the right. That second
+   shape is the one Quest Browser's flat window (≈1000×625) gets. */
+
+.mc-menu {
+  background: rgba(12, 13, 17, 0.4);
+  transition: background-color 400ms ease;
+}
+
+/* While the computer plays itself behind the menu, let the duel show through. */
+.mc-menu[data-attract="true"] {
+  background: rgba(12, 13, 17, 0.12);
+}
+
+.mc-menu-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mc-panel);
+  border: 1px solid var(--mc-line);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.mc-menu-lead {
+  display: contents;
+}
+
+.mc-menu-head {
+  order: 0;
+  flex: none;
+  padding: 1.25rem 1rem 0.75rem;
+  text-align: center;
+}
+
+.mc-menu-mark {
+  font-size: 2.25rem;
+  line-height: 1.1;
+  color: var(--mc-text);
+}
+
+/* A short gold bar under the name: the one ornament the chrome keeps. */
+.mc-menu-mark::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 3px;
+  margin: 0.625rem auto 0;
+  border-radius: 2px;
+  background: var(--mc-gold);
+}
+
+.mc-menu-tagline {
+  margin-top: 0.625rem;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--mc-text-2);
+}
+
+.mc-menu-setup {
+  order: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 1rem;
+}
+
+.mc-menu-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the scroll shade at both ends, and for the scrollbar beside it. */
+  margin-right: -0.5rem;
+  padding: 1rem 0.5rem 1.25rem 0;
+}
+
+.mc-menu-scroll > * + * {
+  margin-top: 1.25rem;
+}
+
+.mc-menu-record {
+  order: 2;
+  flex: none;
+  padding: 0.25rem 1rem 0;
+}
+
+.mc-menu-actions {
+  order: 3;
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.mc-menu-xr {
+  grid-column: 1 / -1;
+}
+
+/* Landscape only: a portrait tablet reads better as the phone's single column. */
+@media (min-width: 760px) and (orientation: landscape) {
+  .mc-menu-card {
+    flex-direction: row;
+    max-width: 55rem;
+  }
+
+  .mc-menu-lead {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 21rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2rem 1.75rem 1.75rem;
+  }
+
+  /* The name, the record and the actions sit together as one group, centred
+     in the column; auto margins rather than centring, so a short landscape
+     screen scrolls the column instead of clipping its top. */
+  .mc-menu-head {
+    margin-top: auto;
+    padding: 0;
+    text-align: left;
+  }
+
+  .mc-menu-mark {
+    font-size: 2.5rem;
+  }
+
+  .mc-menu-mark::after {
+    margin-left: 0;
+  }
+
+  .mc-menu-tagline {
+    font-size: 1.125rem;
+  }
+
+  .mc-menu-record {
+    padding: 1.5rem 0 0;
+  }
+
+  .mc-menu-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.625rem;
+    margin-bottom: auto;
+    padding: 2rem 0 0;
+  }
+
+  /* Beside two 60px actions the settings button is a quieter 48px. */
+  .mc-menu-settings {
+    min-height: 3rem;
+    font-size: 1rem;
+  }
+
+  .mc-menu-setup {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 1.5rem 1.5rem 0;
+    border-left: 1px solid var(--mc-line);
+  }
+}
+
+/* ---------------------------------------------------- menu: choices */
+
+/* Game mode: a segmented control, icon and one word per segment. */
+.mc-seg {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--mc-line);
+  background: var(--mc-surface);
+}
+
+.mc-seg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0 0.5rem;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  color: var(--mc-text-2);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.mc-seg-btn:hover {
+  color: var(--mc-text);
+  background: var(--mc-surface-hover);
+}
+
+.mc-seg-btn[data-active="true"] {
+  color: var(--mc-text);
+  background: var(--mc-gold-tint);
+  border-color: var(--mc-gold);
+  box-shadow: inset 0 0 0 1px var(--mc-gold);
+}
+
+.mc-seg-btn[data-active="true"] svg {
+  color: var(--mc-gold);
+}
+
+/* A phone has a third of ~300px per segment: the icon goes above its word
+   rather than beside it, at no cost in height (the segment is 48px anyway). */
+@media (max-width: 480px) {
+  .mc-seg-btn {
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.25rem;
+    font-size: 0.9375rem;
+  }
+}
+
+/* An icon keeps its size when its label is long and the cell is narrow. */
+.mc-btn svg,
+.mc-seg-btn svg,
+.mc-option svg {
+  flex: none;
+}
+
+.mc-field + .mc-field {
+  margin-top: 1.25rem;
+}
+
+.mc-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--mc-text-2);
+}
+
+.mc-subfield + .mc-subfield {
+  margin-top: 0.75rem;
+}
+
+.mc-sublabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--mc-text);
+}
+
+@media (min-width: 760px) {
+  .mc-label,
+  .mc-sublabel {
+    font-size: 1rem;
+  }
+}
+
+.mc-options {
+  display: grid;
+  grid-template-columns: repeat(var(--mc-cols, 3), minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.mc-options[data-columns="2"] {
+  --mc-cols: 2;
+}
+
+.mc-options[data-columns="4"] {
+  --mc-cols: 4;
+}
+
+.mc-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 3rem;
+  padding: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-surface);
+  color: var(--mc-text);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.mc-option:hover {
+  background: var(--mc-surface-hover);
+  border-color: #8a909c;
+}
+
+.mc-option[data-active="true"] {
+  background: var(--mc-gold-tint);
+  border-color: var(--mc-gold);
+  box-shadow: inset 0 0 0 1px var(--mc-gold);
+  font-weight: 600;
+}
+
+.mc-switch-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--mc-line-strong);
+  background: var(--mc-surface);
+  color: var(--mc-text);
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.mc-switch-row:hover {
+  background: var(--mc-surface-hover);
+}
+
+.mc-switch {
+  position: relative;
+  flex: none;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--mc-line-strong);
+  background: #3a3f49;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.mc-switch[data-on="true"] {
+  background: var(--mc-gold);
+  border-color: var(--mc-gold);
+}
+
+.mc-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background: var(--mc-text);
+  transition: transform 160ms ease;
+}
+
+.mc-switch[data-on="true"] .mc-switch-knob {
+  transform: translateX(1.25rem);
+  background: var(--mc-on-gold);
+}
+
+/* The side's colour code, matching the band painted under its figures. */
+.mc-side-dot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+}
+
+.mc-side-dot[data-side="w"] {
+  background: var(--mc-azure);
+}
+
+.mc-side-dot[data-side="b"] {
+  background: var(--mc-ember);
+}
+
+/* Read-only muster, shown in settings while a duel is running. */
+.mc-locked-list {
+  margin: 0;
+}
+
+.mc-locked-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--mc-line);
+}
+
+.mc-locked-row:last-child {
+  border-bottom: 0;
+}
+
+.mc-locked-row dt {
+  font-size: 0.875rem;
+  color: var(--mc-text-2);
+}
+
+.mc-locked-row dd {
+  margin: 0 0 0 auto;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--mc-text);
+}
+
+.mc-note {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--mc-text-2);
+}
+
+/* ------------------------------------------------------------ record */
+
+/* Won, lost, drawn, win rate, streak — the figure large, its name under it. */
+.mc-record {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: 12px;
+  background: var(--mc-surface);
+}
+
+.mc-record-cell {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.mc-record-cell dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--mc-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-record-cell dt {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--mc-text-2);
+  white-space: nowrap;
+}
+
+.mc-record-flame {
+  color: var(--mc-gold);
+}
+
+/* ------------------------------------------------------------ result card */
+
+.mc-dialog-scrim {
+  background: rgba(10, 11, 14, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+/* A showcase is watched, so the final position stays the picture. */
+.mc-dialog-scrim[data-showcase] {
+  background: rgba(10, 11, 14, 0.3);
+  backdrop-filter: none;
+}
+
+.mc-dialog {
+  width: 100%;
+  max-width: 26rem;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1.75rem 1.5rem 1.5rem;
+  text-align: center;
+  background: var(--mc-panel);
+  border: 1px solid var(--mc-line);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.mc-dialog-eyebrow {
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--mc-text-2);
+}
+
+.mc-dialog-crests {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.mc-dialog-headline {
+  margin-top: 0.75rem;
+  font-size: clamp(1.75rem, 1.25rem + 2.5vw, 2.25rem);
+  line-height: 1.1;
+  color: var(--mc-text);
+}
+
+.mc-dialog-headline[data-tone="win"] {
+  color: var(--mc-gold);
+}
+
+.mc-dialog-headline[data-tone="w"] {
+  color: var(--mc-azure);
+}
+
+.mc-dialog-headline[data-tone="b"] {
+  color: var(--mc-ember);
+}
+
+.mc-dialog-reason {
+  margin-top: 0.375rem;
+  font-size: 1.125rem;
+  color: var(--mc-text-2);
+}
+
+.mc-dialog-record {
+  margin-top: 1.25rem;
+}
+
+.mc-dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  margin-top: 1.5rem;
+}
+
+.mc-dialog-copy {
+  grid-column: 1 / -1;
+}
+
+.mc-countdown {
+  margin-top: 1.25rem;
+  padding: 0.625rem 0.625rem 0.875rem 1rem;
+  border-radius: 12px;
+  background: var(--mc-surface);
+  text-align: left;
+}
+
+.mc-countdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--mc-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-countdown-track {
+  height: 4px;
+  margin-top: 0.625rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--mc-line);
+}
+
+.mc-countdown-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mc-gold);
+  transition: width 100ms linear;
 }
