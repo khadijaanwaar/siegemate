@@ -42,6 +42,9 @@ try {
 
   // ---- enter: no hit-test results in the bare emulator, so the board must fall back.
   await page.evaluate(() => window.__xr.enter());
+  await page.waitForTimeout(500);
+  const placingUi = await page.evaluate(() => window.__xr.ui());
+  check(placingUi.coach === "find-table" && placingUi.panels.includes("coach"), "the coach asks for a table while placing", JSON.stringify(placingUi));
   await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
   const state = await page.evaluate(() => ({ state: window.__xr.state(), placement: window.__xr.placement() }));
   check(state.state === "playing" && state.placement === "fallback", "board falls back to seat height", JSON.stringify(state));
@@ -50,6 +53,8 @@ try {
   const frame = await page.evaluate(() => window.__scene.breakdown());
   const hallLeft = ["castle_hall", "battlefield", "jungle", "dressing", "landmarks"].every((name) => !frame.perGroup[name]);
   check(hallLeft, "the hall and its scenery stay behind", JSON.stringify(frame.perGroup));
+  const lessonUi = await page.evaluate(() => window.__xr.ui());
+  check(lessonUi.coach === "first-move" && lessonUi.panels.includes("slab"), "a first-time player gets the first-move lesson and the control slab", JSON.stringify(lessonUi));
   // The emulator draws both eyes with no multiview: halve for the per-eye cost.
   const perEye = Math.round(frame.calls / 2);
   check(perEye > 0, "the table renders", `calls ${frame.calls}`);
@@ -116,6 +121,19 @@ try {
   await page.waitForFunction(() => window.__xr.snapshot().turn === "w" && !window.__xr.snapshot().fen.endsWith(" 0 1"), null, { timeout: 15000 }).catch(() => undefined);
   const reply = await page.evaluate(() => window.__xr.snapshot().fen);
   check(/ w /.test(reply) && reply !== afterMove.fen, "the machine replies", reply);
+  const afterFirstMove = await page.evaluate(() => window.__xr.ui());
+  check(afterFirstMove.coach === "two-hands" || afterFirstMove.coach === "none", "after the first move the lesson moves on", JSON.stringify(afterFirstMove));
+
+  // ---- the menu: pick Squire and start a new game from the headset.
+  check(await page.evaluate(() => window.__xr.press("menu")), "Menu opens", "");
+  check((await page.evaluate(() => window.__xr.ui())).panels.includes("menu"), "the menu card shows", "");
+  await page.evaluate(() => window.__xr.press("easy"));
+  await page.evaluate(() => window.__xr.press("new"));
+  await page.waitForTimeout(800);
+  const fresh = await page.evaluate(() => ({ fen: window.__xr.snapshot().fen, difficulty: window.__xr.snapshot().difficulty, ui: window.__xr.ui() }));
+  check(fresh.fen.startsWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w") && fresh.difficulty === "easy", "New game starts a fresh Squire game", JSON.stringify(fresh));
+  check(!fresh.ui.panels.includes("menu"), "the menu closes after New game", JSON.stringify(fresh.ui));
+  const onboarded = await page.evaluate(() => localStorage.getItem("mr-chess:onboarded"));
 
   // ---- two hands pinch away from the figures and pull apart: the board grows.
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());

@@ -1,6 +1,7 @@
 /// <reference types="webxr" />
 import * as THREE from "three";
 
+import type { GameController } from "../core/gameController";
 import type { SceneEngine } from "../scene/sceneEngine";
 import { palmFacesHead, palmNormal, PinchTracker } from "./hands";
 import { Markers } from "./markers";
@@ -9,6 +10,7 @@ import { HandOrders } from "./orders";
 import { Placement, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
 import { TableRig } from "./tableRig";
+import { TableUi } from "./ui/tableUi";
 
 export type MixedRealityState = "off" | "starting" | "placing" | "playing";
 
@@ -37,6 +39,8 @@ const UP = new THREE.Vector3(0, 1, 0);
 interface HandSlot {
   pinch: PinchTracker;
   orders: HandOrders;
+  /** This pinch started on a panel button: it belongs to the panel until it opens. */
+  panelPinch: boolean;
 }
 
 /**
@@ -67,14 +71,27 @@ export class MixedReality {
   private readonly quaternion = new THREE.Quaternion();
   private readonly figurePoint = new THREE.Vector3();
   private readonly aimPoint = new THREE.Vector3();
+  private readonly fingertip = new THREE.Vector3();
+  private readonly ui: TableUi;
+  private lessonKey = "";
 
   constructor(
     private readonly engine: SceneEngine,
+    private readonly controller: GameController,
     private readonly hooks: MixedRealityHooks = {},
   ) {
     for (const handedness of HANDS) {
-      this.hands.set(handedness, { pinch: new PinchTracker(), orders: new HandOrders(engine) });
+      this.hands.set(handedness, { pinch: new PinchTracker(), orders: new HandOrders(engine), panelPinch: false });
     }
+    this.ui = new TableUi(controller, {
+      newGame: ({ difficulty, playerColor }) =>
+        controller.start({ mode: "ai", difficulty, playerColor, clockMinutes: null }),
+      undo: () => {
+        controller.undo();
+      },
+      replace: () => this.replace(),
+      exit: () => void this.exit(),
+    });
     this.rig.setScale(loadBoardSize(safeStorage()));
   }
 
@@ -107,6 +124,7 @@ export class MixedReality {
     }
 
     this.engine.xrScene.add(this.markers.group);
+    this.engine.xrScene.add(this.ui.group);
     this.engine.enterTable(this.rig);
     this.rig.root.visible = false;
     this.placement.replace(performance.now() / 1000);
@@ -135,6 +153,19 @@ export class MixedReality {
     return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode };
   }
 
+  /** Tests: what the headset UI shows, and pressing one of its buttons. */
+  debugUi(): ReturnType<TableUi["describe"]> {
+    return this.ui.describe();
+  }
+
+  debugPanels(): Record<string, string> {
+    return this.ui.snapshots();
+  }
+
+  debugPress(id: string): boolean {
+    return this.ui.pressById(id);
+  }
+
   /** The board's size as a multiple of its base (5 cm squares). */
   get boardSize(): number {
     return this.rig.scaleMultiplier;
@@ -159,6 +190,17 @@ export class MixedReality {
 
     if (this.state === "placing") this.updatePlacement(now, frame, space);
     this.updateHands(now, frame, space);
+    this.ui.update(now, { mr: this.state, placement: this.placement.state }, this.head.position, this.head.yaw, this.rig);
+    this.showLesson();
+  }
+
+  /** The first-move lesson pulses the suggested move on the board. */
+  private showLesson(): void {
+    const move = this.ui.lessonMove;
+    const key = move ? `${move.from}${move.to}` : "";
+    if (key === this.lessonKey) return;
+    this.lessonKey = key;
+    this.engine.previewMove(move);
   }
 
   private readHead(transform: XRRigidTransform): void {
@@ -239,6 +281,20 @@ export class MixedReality {
       const event = slot.pinch.update(thumb, index, now, { allowStart: !systemGesture });
       const ray = this.rayOf(frame, source, space);
       if (event === "start" && this.confirmPlacement()) continue;
+
+      // Panels first: a fingertip on a panel pokes it, a pinch along a ray
+      // that lands on a button presses it, and neither reaches the board.
+      const poking = this.ui.poke(source.handedness, index ? this.fingertip.copy(index) : null);
+      const target = ray ? this.ui.rayTarget(ray) : null;
+      this.ui.hoverRay(target);
+      if (event === "start" && target?.button) {
+        this.ui.pressTarget(target);
+        slot.panelPinch = true;
+      }
+      if (slot.panelPinch || poking) {
+        if (event === "end" || event === "lost") slot.panelPinch = false;
+        continue;
+      }
       reads.push({ slot, event, ray });
     }
 
@@ -318,6 +374,11 @@ export class MixedReality {
     if (this.state !== "playing") return;
     const ray = this.rayOf(event.frame, event.inputSource, space);
     if (!ray) return;
+    const target = this.ui.rayTarget(ray);
+    if (target?.button) {
+      this.ui.pressTarget(target);
+      return;
+    }
     const { square } = this.engine.pickWithRay(ray);
     if (square) this.engine.tapSquare(square);
   }
@@ -359,7 +420,10 @@ export class MixedReality {
       slot.orders.update("lost", slot.pinch.point, null);
     }
     this.engine.exitTable();
+    this.engine.previewMove(null);
+    this.lessonKey = "";
     this.markers.group.removeFromParent();
+    this.ui.group.removeFromParent();
     this.rig.showPlinth(false);
     this.table = null;
     this.setState("off");

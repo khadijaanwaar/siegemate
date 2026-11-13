@@ -347,7 +347,7 @@ export function GameShell() {
     engineRef.current = engine;
     // The game on a real table. The system menu or taking the headset off
     // pauses the match (clocks and the machine's search) until the player is back.
-    const mixed = new MixedReality(engine, {
+    const mixed = new MixedReality(engine, controller, {
       onFocus: (focused) => {
         if (controller.getSnapshot().status === "playing") controller.setPaused(!focused);
       },
@@ -524,6 +524,9 @@ export function GameShell() {
       snapshot: () => controller.getSnapshot(),
       pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
       boardSize: () => mixedRef.current?.boardSize ?? null,
+      ui: () => mixedRef.current?.debugUi() ?? null,
+      press: (id: string) => mixedRef.current?.debugPress(id) ?? false,
+      panels: () => mixedRef.current?.debugPanels() ?? {},
       /** Look-dev: the table at seat height, seen from a seated eye, no headset. */
       previewTable: (config?: Partial<MatchConfig>) => {
         const engine = engineRef.current;
