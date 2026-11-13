@@ -29,6 +29,7 @@
 - No post-processing and no shadow maps in XR (they disable fixed foveation). Use contact/blob shadows only.
 - Hand UI (Meta): hit targets ≥ 22 mm, ≥ 12 mm between targets, touch panels at 42–46 cm, ray panels at 0.8–3 m and never 0.5–0.8 m, text ≥ 0.9 cm at 0.6 m, no italics, dark glass backgrounds, a hover state + pressed state + short sound on every press. The palm-pinch system gesture must trigger nothing.
 - All assets are self-hosted under `public/assets/`, with no runtime dependency on `r2-pub.rork.com`.
+- **Offline play vs the AI is a headline feature (owner, 2026-11-13).** After the first launch, the game, every asset of both chosen armies, the AI worker and the audio must work in airplane mode, in Quest Browser and in the installed Quest app. Only online two-player may need a network. The search already runs on-device in `src/ai/engine.worker.ts`.
 - Seated play: nothing requires standing or walking. Room dimming never exceeds 0.6 alpha.
 - Judges play the hosted link and/or the APK on the "Competition" release channel. Whatever is live at the deadline is what gets judged. Freeze at Nov 18 08:00 PT.
 
@@ -288,6 +289,7 @@ In table mode, the camera punch, shake, DOF and fly-ins become: hitstop (existin
 Dark background (no brighter than `#DADADA` anywhere, never `#FFFFFF`), primary buttons ≥ 60 px. **Enter mixed reality** shows only when `isTableXrSupported()`, **Play on this screen** opens the existing 2D game, and a resume card shows when a saved game exists. The first visit precaches all assets, so a second launch works offline.
 
 - [ ] Steps: failing e2e (desktop: no MR button, 2D button works; IWER: MR button present) → implement → pass → commit `feat(ui): launch page and offline install`
+- [ ] Offline e2e `tests/e2e/offline.mjs`: load once online and wait for the service worker to report the precache complete. Then `context.setOffline(true)`, reload, start a game vs Squire, play e2-e4 and get a reply, then enter MR in IWER and do the same. Zero failed requests except the optional online-play endpoints. Precache budget ≤ 30 MB, so a first launch over hotel Wi-Fi stays reasonable. Armies the player never picks may stream in later and are cached when first used.
 
 ### Task 16: Rust server and hosting on ioflood
 
