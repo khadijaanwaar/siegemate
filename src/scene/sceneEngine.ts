@@ -27,6 +27,7 @@ import {
 import { PLAQUE_ASPECT, promotionPlaqueTexture } from "./rankBadges";
 import { PostFX } from "./postfx";
 import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./quality";
+import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -1180,6 +1181,20 @@ export class SceneEngine {
       void this.flashPremoveLost(from, to, dropped, reason),
     );
     this.handleResize();
+    if (import.meta.env.DEV || import.meta.env.MODE === "test") this.exposeStats();
+  }
+
+  /** Dev/test builds only: `window.__scene` for the perf specs and the probe. */
+  private exposeStats(): void {
+    const stats = {
+      breakdown: () => sceneBreakdown(this.scene, this.renderer),
+      piece: (square: SquareId) => {
+        const piece = this.pieces.get(square);
+        return piece ? listDrawables(piece.object) : null;
+      },
+      preset: () => this.preset,
+    };
+    (window as unknown as { __scene: typeof stats }).__scene = stats;
   }
 
   // ---------------------------------------------------------------- lifecycle
