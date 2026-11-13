@@ -1127,15 +1127,20 @@ export class SceneEngine {
     const settings = QUALITY_SETTINGS[preset];
     this.idle.setBuckets(settings.idleUpdateEvery);
 
+    // super-three draws both eyes in one pass on headsets with OCULUS_multiview
+    // (Quest Browser), roughly halving the CPU cost of a stereo frame. It does
+    // nothing outside XR. `?multiview=0` turns it off, for diagnosing a device.
+    const multiviewStereo = new URLSearchParams(window.location.search).get("multiview") !== "0";
     this.renderer = new THREE.WebGLRenderer({
       canvas,
+      multiviewStereo,
       // Always on. It is the default framebuffer's MSAA on a desktop (cheap at
       // the low preset's pixel ratio) and, in a headset, the XR layer's: Quest's
       // tiled GPU resolves MSAA on chip, so jagged edges are never worth saving.
       antialias: true,
       powerPreference: "high-performance",
       alpha: false,
-    });
+    } as THREE.WebGLRendererParameters);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.maxPixelRatio));
     this.renderer.shadowMap.enabled = settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
