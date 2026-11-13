@@ -1,8 +1,31 @@
 import { createRoot } from "react-dom/client";
 
+import { registerSW } from "virtual:pwa-register";
+
 import App from "./App.tsx";
+import { whenIdle } from "./app/updateGate";
+import { BUILD_ID } from "./brand";
 import "./index.css";
 import "./ui/fonts.css";
+
+/**
+ * Offline cache and updates. A newer version found on the server is applied
+ * straight away (the page reloads into it) unless a match is in progress, in
+ * which case it waits for the match to end. The server is asked for a newer
+ * version on every launch and hourly while the game stays open.
+ */
+console.info(`[siegemate] build ${BUILD_ID}`);
+(window as unknown as { __siegemateBuild: string }).__siegemateBuild = BUILD_ID;
+
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    whenIdle(() => void updateServiceWorker(true));
+  },
+  onRegisteredSW(_url, registration) {
+    if (registration) setInterval(() => void registration.update(), 60 * 60 * 1000);
+  },
+});
 
 /**
  * Dev and test builds only: `?emulate` installs Meta's WebXR emulator (IWER)

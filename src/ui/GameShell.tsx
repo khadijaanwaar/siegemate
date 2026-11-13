@@ -20,6 +20,7 @@ import { isTableXrSupported } from "../xr/session";
 import { TableRig } from "../xr/tableRig";
 import { DEFAULT_BOARD_SIZE } from "../xr/manipulate";
 import { APP_NAME } from "../brand";
+import { setMatchInProgress } from "../app/updateGate";
 import { clearSavedGame, saveGame } from "../core/persist";
 import { loadStats, recordGame, saveStats, type PlayerStats } from "../core/stats";
 import { GameOverModal } from "./GameOverModal";
@@ -280,6 +281,11 @@ export function GameShell() {
   const [gpu, setGpu] = useState<string>("");
 
   const [phase, setPhase] = useState<Phase>("loading");
+  // A newer version of the game is applied at the menu only: never mid-match,
+  // over a result card or in the headset.
+  useEffect(() => {
+    setMatchInProgress(phase !== "menu" && phase !== "loading");
+  }, [phase]);
   const [progress, setProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [introPlaying, setIntroPlaying] = useState(false);

@@ -20,9 +20,10 @@ export default defineConfig(({ mode }) => ({
     // battleground), so after that it plays in airplane mode, in the browser
     // and in the installed Quest app.
     VitePWA({
-      // A new deploy waits for the next launch: never a reload mid-match.
+      // Registered from src/main.tsx: a new deploy is applied at once at the
+      // menu, and held while a match is being played (src/app/updateGate.ts).
       registerType: "prompt",
-      injectRegister: "script-defer",
+      injectRegister: false,
       manifest: {
         name: "Siegemate",
         short_name: "Siegemate",
