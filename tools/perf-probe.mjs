@@ -1,4 +1,8 @@
 import { chromium } from "playwright";
+
+import { takeGpuLock } from "./gpu-lock.mjs";
+
+await takeGpuLock();
 const url = process.argv[2];
 // Usage: node tools/perf-probe.mjs <url> [spoofCores] [headed]
 // spoofCores forces a preset through detection (2 → low, 4 → medium).

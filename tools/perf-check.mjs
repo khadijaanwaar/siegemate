@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
+import { takeGpuLock } from "./gpu-lock.mjs";
+
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
@@ -29,6 +31,8 @@ const qualityIndex = args.indexOf("--quality");
 const quality = qualityIndex >= 0 ? args[qualityIndex + 1] : "";
 const port = 4300 + Math.floor(Math.random() * 500);
 
+await takeGpuLock();
+
 const out = mkdtempSync(join(tmpdir(), "perf-check-"));
 execFileSync("npx", ["vite", "build", "--mode", "test", "--outDir", out, "--emptyOutDir"], { stdio: "ignore" });
 const server = spawn("npx", ["vite", "preview", "--outDir", out, "--port", String(port), "--strictPort"], { stdio: "ignore" });
@@ -40,6 +44,9 @@ try {
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 820 }, deviceScaleFactor: 2 })).newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
+  page.on("console", (message) => {
+    if (/context lost|CONTEXT_LOST/i.test(message.text())) errors.push(`WebGL context lost: ${message.text().slice(0, 160)}`);
+  });
   if (spoofCores) {
     await page.addInitScript((cores) => Object.defineProperty(Navigator.prototype, "hardwareConcurrency", { get: () => cores }), spoofCores);
   }
@@ -64,6 +71,8 @@ try {
     ["pieceDrawsPerFigure", result.pieceDrawsPerFigure, budgets.pieceDraws],
     ["board", result.perGroup.board ?? 0, budgets.board],
   ];
+  // A frame with no draw calls means nothing rendered: never a pass.
+  if (result.calls === 0) errors.push("no draw calls in the last frame (nothing rendered)");
   if (args.includes("--json")) console.log(JSON.stringify(result, null, 1));
   console.log(`preset ${result.preset} · ${result.figures} figures · calls ${result.calls} · tris ${result.triangles}`);
   for (const [name, value, max] of checks) {
