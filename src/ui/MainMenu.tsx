@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { APP_NAME } from "../brand";
-import { Clapperboard, Crown, Swords, Settings as SettingsIcon, Users } from "lucide-react";
+import { Clapperboard, Crown, Glasses, Settings as SettingsIcon, Swords, Users } from "lucide-react";
 
 import type { DemoOptions, Difficulty, Faction } from "../core/types";
 import { Crest } from "./Heraldry";
@@ -23,6 +23,8 @@ interface MainMenuProps {
   onMuster: (choice: MusterChoice) => void;
   attract: boolean;
   onInteract: () => void;
+  /** Present when this browser can show the game on a real table (Quest Browser). */
+  onStartMixedReality?: (config: MatchConfig) => void;
 }
 
 const DIFFICULTY_COPY: Record<Difficulty, string> = {
@@ -45,7 +47,15 @@ const CLOCKS: { label: string; value: number | null }[] = [
   { label: "15 min", value: 15 },
 ];
 
-export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, onInteract }: MainMenuProps) {
+export function MainMenu({
+  onStart,
+  onOpenSettings,
+  muster,
+  onMuster,
+  attract,
+  onInteract,
+  onStartMixedReality,
+}: MainMenuProps) {
   const hasKeyboard = useHasKeyboard();
   const [tab, setTab] = useState<"ai" | "hotseat" | "demo">("ai");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -56,14 +66,14 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
   const [demoSpeed, setDemoSpeed] = useState(1);
   const [demoLoop, setDemoLoop] = useState(true);
 
-  const start = (): void =>
-    onStart({
-      mode: tab,
-      difficulty,
-      playerColor,
-      clockMinutes: tab === "demo" ? null : clock,
-      demo: tab === "demo" ? { white: demoWhite, black: demoBlack, speed: demoSpeed, autoRematch: demoLoop } : undefined,
-    });
+  const config = (): MatchConfig => ({
+    mode: tab,
+    difficulty,
+    playerColor,
+    clockMinutes: tab === "demo" ? null : clock,
+    demo: tab === "demo" ? { white: demoWhite, black: demoBlack, speed: demoSpeed, autoRematch: demoLoop } : undefined,
+  });
+  const start = (): void => onStart(config());
 
   return (
     <div
@@ -264,6 +274,15 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
         </div>
 
         <div className="mc-panel-foot mc-actions mt-5 shrink-0">
+        {onStartMixedReality ? (
+          <button
+            type="button"
+            className="mc-btn mc-btn-primary mc-btn-xr flex items-center justify-center gap-2"
+            onClick={() => onStartMixedReality(config())}
+          >
+            <Glasses size={16} /> Play on your table
+          </button>
+        ) : null}
         <button
           type="button"
           className="mc-btn mc-btn-primary flex items-center justify-center gap-2"

@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App.tsx";
 import "./index.css";
+import "./ui/fonts.css";
 
 /**
  * Dev and test builds only: `?emulate` installs Meta's WebXR emulator (IWER)
@@ -18,6 +19,17 @@ async function installEmulator(): Promise<void> {
   (window as unknown as { __iwer: typeof device }).__iwer = device;
 }
 
-void installEmulator().finally(() => {
+/**
+ * Board labels and rank crests are painted into textures with these faces at
+ * boot; give them a moment to arrive so the first paint is not in a fallback
+ * serif. Never wait long: a slow font must not hold the game.
+ */
+async function awaitFonts(): Promise<void> {
+  if (!("fonts" in document)) return;
+  const faces = ["600 32px Cinzel", "700 32px Cinzel", "400 18px 'Crimson Pro'"].map((face) => document.fonts.load(face));
+  await Promise.race([Promise.allSettled(faces), new Promise((resolve) => setTimeout(resolve, 1500))]);
+}
+
+void Promise.all([installEmulator(), awaitFonts()]).finally(() => {
   createRoot(document.getElementById("root")!).render(<App />);
 });

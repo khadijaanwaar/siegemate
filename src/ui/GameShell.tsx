@@ -16,6 +16,7 @@ import { ARENA_LOOKS, DEFAULT_ARENA } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
 import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
 import { MixedReality } from "../xr/mixedReality";
+import { isTableXrSupported } from "../xr/session";
 import { APP_NAME } from "../brand";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
@@ -446,6 +447,31 @@ export function GameShell() {
     [controller, showcaseCamera, stopAttract],
   );
 
+  // Quest Browser (and the emulator) can stand the board on a real table.
+  const [xrSupported, setXrSupported] = useState<boolean>(false);
+  useEffect(() => {
+    let live = true;
+    void isTableXrSupported().then((supported) => {
+      if (live) setXrSupported(supported);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const startMixedReality = useCallback(
+    (config: MatchConfig) => {
+      startMatch(config);
+      // Straight from the tap: browsers only open an immersive session on a user gesture.
+      mixedRef.current?.enter().catch((error: unknown) => {
+        console.warn("[xr] could not start mixed reality", error);
+        setNotice("Mixed reality could not start on this device. The battle carries on here.");
+        setTimeout(() => setNotice(null), 6000);
+      });
+    },
+    [startMatch],
+  );
+
   // Dev and test builds only: drive the mixed reality path from Playwright + IWER.
   useEffect(() => {
     if (!(import.meta.env.DEV || import.meta.env.MODE === "test")) return;
@@ -688,6 +714,7 @@ export function GameShell() {
             onMuster={handleMuster}
             attract={attract}
             onInteract={stopAttract}
+            onStartMixedReality={xrSupported ? startMixedReality : undefined}
           />
         ) : null}
 

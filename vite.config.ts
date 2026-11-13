@@ -13,6 +13,11 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react()],
+  build: {
+    // Hashed code goes under /build (cached forever); /assets is the
+    // self-hosted media, whose names are stable and must stay revalidated.
+    assetsDir: "build",
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
