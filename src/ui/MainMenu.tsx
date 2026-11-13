@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { APP_NAME } from "../brand";
+import type { PlayerStats } from "../core/stats";
+import { RecordStrip } from "./RecordStrip";
 import { Clapperboard, Crown, Glasses, Settings as SettingsIcon, Swords, Users } from "lucide-react";
 
 import type { DemoOptions, Difficulty, Faction } from "../core/types";
@@ -25,6 +27,8 @@ interface MainMenuProps {
   onInteract: () => void;
   /** Present when this browser can show the game on a real table (Quest Browser). */
   onStartMixedReality?: (config: MatchConfig) => void;
+  /** The player's record against the computer (hidden until the first game). */
+  stats?: PlayerStats;
 }
 
 const DIFFICULTY_COPY: Record<Difficulty, string> = {
@@ -55,6 +59,7 @@ export function MainMenu({
   attract,
   onInteract,
   onStartMixedReality,
+  stats,
 }: MainMenuProps) {
   const hasKeyboard = useHasKeyboard();
   const [tab, setTab] = useState<"ai" | "hotseat" | "demo">("ai");
@@ -273,6 +278,11 @@ export function MainMenu({
         <MusterSection choice={muster} onChange={onMuster} />
         </div>
 
+        {stats ? (
+          <div className="mt-4 shrink-0 text-center">
+            <RecordStrip stats={stats} tone="dark" />
+          </div>
+        ) : null}
         <div className="mc-panel-foot mc-actions mt-5 shrink-0">
         {onStartMixedReality ? (
           <button

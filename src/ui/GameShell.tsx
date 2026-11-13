@@ -18,6 +18,8 @@ import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sc
 import { MixedReality } from "../xr/mixedReality";
 import { isTableXrSupported } from "../xr/session";
 import { APP_NAME } from "../brand";
+import { clearSavedGame, saveGame } from "../core/persist";
+import { loadStats, recordGame, saveStats, type PlayerStats } from "../core/stats";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { useHasKeyboard } from "./inputMode";
@@ -217,6 +219,38 @@ export function GameShell() {
 
   const controller = useMemo(() => new GameController(), []);
   const snapshot = useGameSnapshot(controller);
+
+  // The player's record against the computer, and the match in progress, both
+  // kept on this device so they survive a reload, a crash or no network at all.
+  const [stats, setStats] = useState<PlayerStats>(() => loadStats(window.localStorage));
+  useEffect(() => {
+    const storage = window.localStorage;
+    const offMove = controller.on("move", () => {
+      const current = controller.getSnapshot();
+      if (current.status === "playing" && (current.mode === "ai" || current.mode === "hotseat")) {
+        saveGame(storage, controller.exportSave());
+      }
+    });
+    const offOver = controller.on("gameover", (result) => {
+      clearSavedGame(storage);
+      const current = controller.getSnapshot();
+      if (current.mode !== "ai") return;
+      const next = recordGame(loadStats(storage), {
+        mode: current.mode,
+        difficulty: current.difficulty,
+        playerColor: current.playerColor,
+        result,
+        plies: current.sanList.length,
+        at: Date.now(),
+      });
+      saveStats(storage, next);
+      setStats(next);
+    });
+    return () => {
+      offMove();
+      offOver();
+    };
+  }, [controller]);
 
   const detected = useMemo<QualityPreset>(() => detectQualityPreset(), []);
   const initialRender = useMemo<RenderPrefs>(() => loadRenderPrefs(), []);
@@ -715,6 +749,7 @@ export function GameShell() {
             attract={attract}
             onInteract={stopAttract}
             onStartMixedReality={xrSupported ? startMixedReality : undefined}
+            stats={stats}
           />
         ) : null}
 
@@ -810,6 +845,7 @@ export function GameShell() {
             playerColor={snapshot.playerColor}
             versusComputer={snapshot.mode === "ai"}
             moveCount={snapshot.history.length}
+            stats={snapshot.mode === "ai" ? stats : undefined}
             showcase={
               snapshot.demo
                 ? {

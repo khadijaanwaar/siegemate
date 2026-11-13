@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { PlayerStats } from "../core/stats";
+import { RecordStrip } from "./RecordStrip";
 import { Check, Copy, Home, PauseCircle, RotateCw, Swords } from "lucide-react";
 
 import { DEMO_REMATCH_DELAY_MS } from "../core/gameController";
@@ -29,6 +31,8 @@ interface GameOverModalProps {
   playerColor: Faction;
   versusComputer: boolean;
   moveCount: number;
+  /** The player's record including this game (games against the computer only). */
+  stats?: PlayerStats;
   showcase?: ShowcaseOutcome | null;
   onRematch: () => void;
   onMenu: () => void;
@@ -58,6 +62,7 @@ export function GameOverModal({
   versusComputer,
   moveCount,
   showcase,
+  stats,
   onRematch,
   onMenu,
 }: GameOverModalProps) {
@@ -119,6 +124,12 @@ export function GameOverModal({
           <h2 className="mc-display mt-4 text-3xl font-bold tracking-[0.14em] text-[#43301a]">{headline}</h2>
           <div className="mc-rule mx-auto mt-2 w-40 opacity-70" />
           <p className="mt-2 text-sm italic text-[#6a5334]">{REASON_COPY[result.reason]}</p>
+
+          {stats && !showcase ? (
+            <div className="mt-3">
+              <RecordStrip stats={stats} tone="parchment" />
+            </div>
+          ) : null}
 
           {showcase ? (
             <p className="mc-display mt-2 text-[0.6rem] tracking-[0.24em] text-[#7d6236]">
