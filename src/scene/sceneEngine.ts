@@ -30,6 +30,7 @@ import { PostFX } from "./postfx";
 import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./quality";
 import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
+import { LightBlendPass } from "./lightBlend";
 import type { TableRig } from "../xr/tableRig";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
@@ -1117,6 +1118,7 @@ export class SceneEngine {
   private readonly world = new THREE.Group();
   /** Idle figures update in turns; see `IdleScheduler`. */
   private readonly idle = new IdleScheduler(1);
+  private readonly lightBlend = new LightBlendPass();
   private lastFpsReport = 0;
 
   constructor(
@@ -1146,6 +1148,9 @@ export class SceneEngine {
       powerPreference: "high-performance",
       alpha: false,
     } as THREE.WebGLRendererParameters);
+    // Without this three draws an XR session's frames from the desktop camera,
+    // not from the headset (or phone): one view, metres away from the player.
+    this.renderer.xr.enabled = true;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.maxPixelRatio));
     this.renderer.shadowMap.enabled = settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -1559,7 +1564,9 @@ export class SceneEngine {
 
     if (this.table) {
       // The headset owns the camera, and post-processing would switch off
-      // fixed foveation: draw straight to the XR framebuffer.
+      // fixed foveation: draw straight to the XR framebuffer. Light must add to
+      // the room, not darken it (see lightBlend.ts).
+      this.lightBlend.apply(this.scene);
       this.renderer.render(this.scene, this.camera);
       return;
     }

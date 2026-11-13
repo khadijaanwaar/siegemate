@@ -48,6 +48,9 @@ try {
   await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
   const state = await page.evaluate(() => ({ state: window.__xr.state(), placement: window.__xr.placement() }));
   check(state.state === "playing" && state.placement === "fallback", "board falls back to seat height", JSON.stringify(state));
+  // The frame must be drawn from the headset, not from the desktop camera metres away.
+  const presenting = await page.evaluate(() => window.__xr.sizes());
+  check(presenting?.xrEnabled === true && presenting?.presenting === true, "three draws the session from the headset's own eyes", JSON.stringify(presenting));
 
   await page.waitForTimeout(1500);
   const frame = await page.evaluate(() => window.__scene.breakdown());

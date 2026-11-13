@@ -173,6 +173,34 @@ export class MixedReality {
     return this.ui.describe();
   }
 
+  /** Tests: real-world sizes of what is on the table, in metres. */
+  debugSizes(): Record<string, unknown> {
+    const box = new THREE.Box3();
+    const size = new THREE.Vector3();
+    const measure = (object: THREE.Object3D | undefined): number[] | null => {
+      if (!object) return null;
+      box.setFromObject(object);
+      if (box.isEmpty()) return null;
+      box.getSize(size);
+      return [size.x, size.y, size.z].map((value) => Math.round(value * 1000) / 1000);
+    };
+    const content = this.rig.content;
+    const board = content.getObjectByName("game_world")?.children.find((child) => child.name === "board");
+    const glow = this.room.group.children[1];
+    const xr = this.engine.xrRenderer.xr;
+    return {
+      xrEnabled: xr.enabled,
+      presenting: xr.isPresenting,
+      unitsToMeters: this.rig.unitsToMeters,
+      contentScale: content.scale.x,
+      rigVisible: this.rig.root.visible,
+      board: measure(board),
+      glowScale: glow?.scale.x,
+      head: this.head.position.toArray().map((value) => Math.round(value * 100) / 100),
+      rigAt: this.rig.root.position.toArray().map((value) => Math.round(value * 100) / 100),
+    };
+  }
+
   /** Tests: the room's current battleground styling. */
   debugRoom(): { theme: string | null } {
     return { theme: this.room.current };

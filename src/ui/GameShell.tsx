@@ -535,6 +535,7 @@ export function GameShell() {
       press: (id: string) => mixedRef.current?.debugPress(id) ?? false,
       panels: () => mixedRef.current?.debugPanels() ?? {},
       room: () => mixedRef.current?.debugRoom() ?? null,
+      sizes: () => mixedRef.current?.debugSizes() ?? null,
       /** Look-dev: the table at seat height, seen from a seated eye, no headset. */
       previewTable: (config?: Partial<MatchConfig>) => {
         const engine = engineRef.current;
