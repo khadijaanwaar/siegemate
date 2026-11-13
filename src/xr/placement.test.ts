@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { FALLBACK_AFTER_S, fallbackBoardPose, isTableSurface, Placement, yawFacing } from "./placement";
+import { FALLBACK_AFTER_S, fallbackBoardPose, isReachableSurface, isTableSurface, Placement, yawFacing } from "./placement";
 
 const up = new THREE.Vector3(0, 1, 0);
 const head = { position: new THREE.Vector3(0, 1.2, 0), yaw: 0 };
@@ -32,6 +32,25 @@ describe("isTableSurface", () => {
   });
 });
 
+describe("isReachableSurface", () => {
+  it("accepts a table within reach of a seated or standing player", () => {
+    expect(isReachableSurface(new THREE.Vector3(0, 0.74, -0.5), head.position)).toBe(true);
+    expect(isReachableSurface(new THREE.Vector3(0.3, 0.75, -0.8), new THREE.Vector3(0, 1.55, 0))).toBe(true);
+  });
+
+  it("refuses the floor, which is what a phone held up mostly sees", () => {
+    expect(isReachableSurface(new THREE.Vector3(0, 0, -0.8), new THREE.Vector3(0, 1.4, 0))).toBe(false);
+  });
+
+  it("refuses a surface across the room", () => {
+    expect(isReachableSurface(new THREE.Vector3(0, 0.75, -2.2), head.position)).toBe(false);
+  });
+
+  it("refuses a shelf at eye height or above", () => {
+    expect(isReachableSurface(new THREE.Vector3(0, 1.25, -0.5), head.position)).toBe(false);
+  });
+});
+
 describe("yawFacing", () => {
   it("turns the white side toward the player", () => {
     expect(yawFacing(new THREE.Vector3(0, 0.75, -0.5), new THREE.Vector3(0, 1.2, 0))).toBeCloseTo(0, 6);
@@ -48,6 +67,12 @@ describe("Placement", () => {
     expect(placement.state).toBe("placed");
     expect(pose?.position.y).toBeCloseTo(0.74, 6);
     expect(pose?.yaw).toBeCloseTo(0, 6);
+  });
+
+  it("ignores a floor hit while searching", () => {
+    const placement = new Placement();
+    placement.update(0.1, head, { position: new THREE.Vector3(0, 0, -1.5), normal: up });
+    expect(placement.state).toBe("searching");
   });
 
   it("ignores walls while searching", () => {

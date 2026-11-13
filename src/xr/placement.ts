@@ -10,6 +10,11 @@ const FALLBACK_AHEAD_M = 0.45;
 const FALLBACK_BELOW_M = 0.4;
 /** cos(25°): flatter than this counts as a table top. */
 const MIN_UP_DOT = 0.9;
+/** A table the player can reach: this far away at most, measured flat... */
+const MAX_REACH_M = 1.0;
+/** ...and between these depths below the eyes (a desk seated, a counter standing; never the floor). */
+const MIN_DROP_M = 0.15;
+const MAX_DROP_M = 0.95;
 
 export interface BoardPose {
   /** The surface point the board stands on, in the floor-level reference space. */
@@ -46,6 +51,17 @@ export function isTableSurface(normal: THREE.Vector3): boolean {
   return normal.dot(UP) >= MIN_UP_DOT;
 }
 
+/**
+ * A surface the board belongs on: within arm's reach and at table height. A
+ * phone held up, or a headset glancing down, mostly finds the floor a metre or
+ * two away; a board stood there is tiny and out of reach.
+ */
+export function isReachableSurface(point: THREE.Vector3, head: THREE.Vector3): boolean {
+  const reach = Math.hypot(point.x - head.x, point.z - head.z);
+  const drop = head.y - point.y;
+  return reach <= MAX_REACH_M && drop >= MIN_DROP_M && drop <= MAX_DROP_M;
+}
+
 /** The yaw that turns the board's white side (+Z) toward `head`. */
 export function yawFacing(board: THREE.Vector3, head: THREE.Vector3): number {
   return Math.atan2(head.x - board.x, head.z - board.z);
@@ -80,7 +96,7 @@ export class Placement {
     if (this.current === "placed" || this.current === "fallback") return;
     if (this.searchFrom === null) this.searchFrom = now;
 
-    if (hit && isTableSurface(hit.normal)) {
+    if (hit && isTableSurface(hit.normal) && isReachableSurface(hit.position, head.position)) {
       this.lastHitAt = now;
       this.aim = { position: hit.position.clone(), yaw: yawFacing(hit.position, head.position) };
       this.current = "aiming";
