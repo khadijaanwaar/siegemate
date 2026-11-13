@@ -26,7 +26,8 @@ async function installEmulator(): Promise<void> {
  */
 async function awaitFonts(): Promise<void> {
   if (!("fonts" in document)) return;
-  const faces = ["600 32px Cinzel", "700 32px Cinzel", "400 18px 'Crimson Pro'"].map((face) => document.fonts.load(face));
+  // Cinzel paints the board labels and crests; Inter the headset panels.
+  const faces = ["600 32px Cinzel", "700 32px Cinzel", "600 32px Inter"].map((face) => document.fonts.load(face));
   await Promise.race([Promise.allSettled(faces), new Promise((resolve) => setTimeout(resolve, 1500))]);
 }
 

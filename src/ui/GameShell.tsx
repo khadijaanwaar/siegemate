@@ -909,16 +909,15 @@ export function GameShell() {
 
 function LoadingScreen({ progress }: { progress: number }) {
   return (
-    <div className="mc-fade absolute inset-0 flex flex-col items-center justify-center gap-5 bg-[#05060a]/85 px-6">
-      <p className="mc-display text-[0.62rem] tracking-[0.5em] text-[#a89268]">MUSTERING THE ARMIES</p>
-      <h1 className="mc-display mc-title-glow text-4xl text-[#f4e3bd]">{APP_NAME.toUpperCase()}</h1>
-      <div className="h-[3px] w-64 overflow-hidden rounded-full bg-[#2a251c]">
+    <div className="mc-fade absolute inset-0 flex flex-col items-center justify-center gap-5 bg-[var(--mc-panel)] px-6">
+      <h1 className="mc-wordmark text-4xl">{APP_NAME}</h1>
+      <div className="h-1 w-64 overflow-hidden rounded-full bg-[var(--mc-surface)]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#8a6522] via-[#f6dfa5] to-[#8a6522] transition-[width] duration-300"
+          className="h-full rounded-full bg-[var(--mc-gold)] transition-[width] duration-300"
           style={{ width: `${Math.round(progress * 100)}%` }}
         />
       </div>
-      <p className="text-xs italic text-[#7d6f57]">Carving {Math.round(progress * 6)} of 6 figures…</p>
+      <p className="text-base text-[var(--mc-text-2)]">Loading armies {Math.round(progress * 100)}%</p>
     </div>
   );
 }
