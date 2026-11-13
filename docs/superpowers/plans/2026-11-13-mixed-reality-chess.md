@@ -18,6 +18,7 @@
 - **Edge cases are designed, not discovered:** lost tracking, system menu, no table, controllers, illegal drops, promotion, resume after exit.
 - **Social comes last:** online two-player through a Rust WebSocket relay on ioflood with room codes, and the opponent's head and hands shown as a ghost. Only after single-player is done and shipped.
 - **Name:** pending the owner's pick (see README). It lives in one constant, `APP_NAME` in `src/brand.ts`.
+- **How a move is made (decided while building, 2026-11-13):** you *command*, you don't carry. Pinching one of your figures selects it and lights its squares. A glowing command line runs from the figure to your hand, and a ring marks the square under it. Letting go there sends the figure **marching** there with the full choreography. Pinching anywhere else aims the hand's ray instead (pinch-release taps the square it points at), and that is also the controller path. Both go through the same click rules as the mouse (`handleSquareTap`), premoves included.
 
 ## Global Constraints
 
@@ -66,14 +67,16 @@ src/assets/assetUrl.ts           base-path aware local asset URLs
 src/xr/session.ts                immersive-ar session: features, 72 Hz, foveation, visibility/end events
 src/xr/tableRig.ts               scaled table root (TABLE_SCALE), plinth, re-place/rotate
 src/xr/placement.ts              hit-test reticle, anchors, fallback pose
-src/xr/hands.ts                  PinchTracker, joint-based pinch point, tracking-loss detection
-src/xr/grab.ts                   GrabController: hands/rays → engine drag/tap API
+src/xr/hands.ts                  PinchTracker, palm direction / system-gesture veto
+src/xr/orders.ts                 HandOrders: one hand's pinch → engine order/tap API
+src/xr/markers.ts                command line, target ring, pointer rays, placement ring
 src/xr/ui/panel.ts               CanvasPanel: poke + ray press, hover/pressed, sounds
 src/xr/ui/menus.ts               start, side, HUD, game-over panels
 src/xr/lifecycle.ts              pause/resume/end state machine, game persistence
 src/xr/roomTheme.ts              per-battleground dimmer, weather, table light, diorama
 src/xr/perfHud.ts                dev-only draw/tri/frame-time overlay + window.__perf hook
-src/xr/xrMain.ts                 wires session → rig → engine table mode → input → UI
+src/xr/mixedReality.ts           MixedReality: session → placement → table mode → hands/controllers each frame
+src/core/persist.ts              SavedGame storage (resume after a lost session)
 src/ui/Launch.tsx                2D launch page (dark, ≥ 60 px targets, resume card)
 tools/optimize-assets.mjs        download + optimize every remote asset into public/assets
 tools/check-assets.mjs           budget check: per-file triangles, total size, no remote URLs
@@ -83,6 +86,11 @@ twa/                             Bubblewrap config for the Quest APK
 ```
 
 ---
+
+## Progress log
+
+- 2026-11-13: Task 1 done (laptop auto preset 24 → 55 fps menu, 40 → 56 fps duel). Task 5 done (A/B frame-time check pending a free GPU). Tasks 2, 3, 4 running in parallel lanes. Tasks 6–9 core landed without the super-three swap (waiting for the lanes, since they share node_modules): session, rig, placement, pinch, orders, markers, `MixedReality`, engine table mode, IWER e2e (`tests/e2e/xr-play.mjs`). Task 11's save/resume core landed.
+- Tooling: `tools/perf-check.mjs` (budgets, fails on a dead frame), `tools/perf-probe.mjs` (fps), `tools/gpu-lock.mjs` (one GPU test at a time: parallel headless Chromes made the Iris Plus lose its WebGL context).
 
 ## Phase A — Performance foundation (also fixes the laptop)
 
@@ -144,7 +152,7 @@ twa/                             Bubblewrap config for the Quest APK
 
 **Files:** Create `src/scene/idleScheduler.ts`. Modify `PieceView.update` callers in `sceneEngine.ts:frame()`. Test: `src/scene/idleScheduler.test.ts`.
 
-**Interfaces — Produces:** `class IdleScheduler { constructor(buckets: number); shouldUpdate(id: number, frame: number): boolean; }`. A piece that is moving, striking, dying or selected always updates. Idle-only pieces update every `buckets`-th frame, with the delta accumulated.
+**Interfaces — Produces (as built):** `class IdleScheduler { constructor(buckets: number); setBuckets(n: number): void; beginFrame(): void; step(figure: object, delta: number, busy: boolean): number | null; }`. A piece that is moving, striking, dying or selected always updates. Idle-only pieces update every `buckets`-th frame, with the delta accumulated.
 
 - [ ] Step 1: Failing tests: with 2 buckets, ids 0 and 1 alternate across frames 0..3. The accumulated delta handed back equals the sum of the skipped frames.
 - [ ] Step 2: Run → FAIL. Step 3: implement. `buckets` = 1 on ultra/high, 2 on medium/low and in XR.
@@ -201,7 +209,7 @@ A hit reticle shows only on upward-facing surfaces (normal·up > 0.9). A pinch c
 
 **Interfaces — Produces:**
 `class PinchTracker { update(thumbTip: THREE.Vector3 | null, indexTip: THREE.Vector3 | null, now: number): "start" | "hold" | "end" | "lost" | null; readonly point: THREE.Vector3; }`: starts below 1.5 cm, ends above 2.5 cm, `lost` after 150 ms with no joints while pinching.
-SceneEngine API: `beginDrag(square: SquareId): boolean`, `dragTo(worldPoint: THREE.Vector3): SquareId | null`, `dropDrag(square: SquareId | null): Promise<void>`, `cancelDrag(): void`, `tapSquare(square: SquareId): void`, `squareAtWorld(point: THREE.Vector3): SquareId | null`, `pieceNear(worldPoint: THREE.Vector3, radiusMeters: number): SquareId | null`.
+SceneEngine API (as built): `beginOrder(square): boolean`, `releaseOrder(square | null): void`, `cancelOrder(): void`, `tapSquare(square | null): void`, `pickWithRay(ray): { square, piece }`, `squareAtWorld(point): SquareId | null`, `figureNear(point, radiusMeters): SquareId | null`, `squareCenterWorld(square, out)`, `isLegalTarget(square)`, `orderedSquare`.
 `class GrabController { constructor(engine: SceneEngine, rig: TableRig); update(frame: XRFrame, refSpace: XRReferenceSpace): void; }`: a direct grab needs the pinch point within 3 cm of a figure on the mover's side. A ray `select` maps to `tapSquare`. The carried figure is lifted 2 cm and follows the pinch, with the square under it lit.
 
 - [ ] Step 1: Failing tests:
