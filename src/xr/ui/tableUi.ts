@@ -23,6 +23,8 @@ export interface TableUiActions {
   undo(): void;
   replace(): void;
   exit(): void;
+  cycleArena(): void;
+  arenaLabel(): string;
 }
 
 type PanelName = "coach" | "slab" | "menu" | "result";
@@ -74,6 +76,8 @@ export class TableUi {
   private playerMoved = false;
   private statusKey = "";
   private strength: Difficulty = "medium";
+  /** The battleground name the menu was last drawn with. */
+  private menuArena = "";
   private side: Faction = "w";
   private readonly unsubscribe: (() => void)[] = [];
   private readonly head = new THREE.Vector3();
@@ -89,7 +93,7 @@ export class TableUi {
       // Read from ~0.75 m: 16 mm type keeps Meta's ~0.9 degree minimum.
       coach: new CanvasPanel(0.42, 0.08),
       slab: new CanvasPanel(0.17, 0.085),
-      menu: new CanvasPanel(0.26, 0.2),
+      menu: new CanvasPanel(0.26, 0.236),
       result: new CanvasPanel(0.28, 0.13),
     };
     for (const panel of Object.values(this.panels)) {
@@ -131,6 +135,7 @@ export class TableUi {
     if (step !== this.coachStep) this.showCoach(step);
 
     const playing = input.mr === "playing";
+    if (this.menuOpen && this.actions.arenaLabel() !== this.menuArena) this.showMenu();
     this.panels.slab.visible = playing;
     if (playing) this.refreshStatus();
     if (this.pendingResult && playing) {
@@ -286,6 +291,10 @@ export class TableUi {
         this.playerMoved = false;
         this.actions.newGame({ difficulty: this.strength, playerColor: this.side });
         break;
+      case "arena":
+        // The label follows once the shell has applied the new map (see update).
+        this.actions.cycleArena();
+        break;
       case "replace":
         this.menuOpen = false;
         this.showMenu();
@@ -352,6 +361,7 @@ export class TableUi {
     panel.visible = this.menuOpen;
     this.statusKey = ""; // the Menu button shows its state
     if (!this.menuOpen) return;
+    this.menuArena = this.actions.arenaLabel();
     const third = (panel.width - 0.04) / 3;
     const buttons: PanelButton[] = [
       ...STRENGTHS.map((strength, index) => ({
@@ -362,10 +372,11 @@ export class TableUi {
       })),
       { id: "side-w", rect: [0.014, 0.072, 0.11, 0.03], label: "Play white", tone: this.side === "w" ? "selected" : "plain" },
       { id: "side-b", rect: [0.136, 0.072, 0.11, 0.03], label: "Play black", tone: this.side === "b" ? "selected" : "plain" },
-      { id: "new", rect: [0.014, 0.112, panel.width - 0.028, 0.034], label: "New game", tone: "primary" },
-      { id: "replace", rect: [0.014, 0.154, 0.072, 0.03], label: "Re-place" },
-      { id: "howto", rect: [0.094, 0.154, 0.072, 0.03], label: "How to" },
-      { id: "exit", rect: [0.174, 0.154, 0.072, 0.03], label: "Exit", tone: "danger" },
+      { id: "arena", rect: [0.014, 0.11, panel.width - 0.028, 0.03], label: `Battleground · ${this.actions.arenaLabel()}` },
+      { id: "new", rect: [0.014, 0.148, panel.width - 0.028, 0.034], label: "New game", tone: "primary" },
+      { id: "replace", rect: [0.014, 0.19, 0.072, 0.03], label: "Re-place" },
+      { id: "howto", rect: [0.094, 0.19, 0.072, 0.03], label: "How to" },
+      { id: "exit", rect: [0.174, 0.19, 0.072, 0.03], label: "Exit", tone: "danger" },
     ];
     this.setPanel(panel, {
       lines: [{ text: "Strength", size: 0.009, y: 0.02, color: UI.muted }],

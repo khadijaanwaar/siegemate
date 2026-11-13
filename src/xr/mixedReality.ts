@@ -2,6 +2,7 @@
 import * as THREE from "three";
 
 import type { GameController } from "../core/gameController";
+import { ARENA_LOOKS, type ArenaTheme } from "../scene/arena";
 import type { SceneEngine } from "../scene/sceneEngine";
 import { palmFacesHead, palmNormal, PinchTracker } from "./hands";
 import { Markers } from "./markers";
@@ -9,6 +10,8 @@ import { loadBoardSize, saveBoardSize, twoHandTransform, type TwoHandStart } fro
 import { HandOrders } from "./orders";
 import { Placement, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
+import { RoomStyler } from "./roomStyler";
+import { nextArena, type BoardArea } from "./roomTheme";
 import { TableRig } from "./tableRig";
 import { TableUi } from "./ui/tableUi";
 
@@ -20,7 +23,12 @@ export interface MixedRealityHooks {
   onStateChange?: (state: MixedRealityState) => void;
   /** System menu up / headset off (`false`), or back (`true`). */
   onFocus?: (focused: boolean) => void;
+  /** The player picked another battleground in the headset (board, music and room follow). */
+  onArena?: (theme: ArenaTheme) => void;
 }
+
+/** The board base's half width in game units, with its trim (matches the UI layout). */
+const BOARD_HALF_UNITS = 4.92;
 
 const HANDS: XRHandedness[] = ["left", "right"];
 
@@ -73,6 +81,8 @@ export class MixedReality {
   private readonly aimPoint = new THREE.Vector3();
   private readonly fingertip = new THREE.Vector3();
   private readonly ui: TableUi;
+  private readonly room = new RoomStyler();
+  private lastFrameAt = 0;
   private lessonKey = "";
 
   constructor(
@@ -91,6 +101,8 @@ export class MixedReality {
       },
       replace: () => this.replace(),
       exit: () => void this.exit(),
+      cycleArena: () => this.hooks.onArena?.(nextArena(this.engine.getArena())),
+      arenaLabel: () => ARENA_LOOKS[this.engine.getArena()].label,
     });
     this.rig.setScale(loadBoardSize(safeStorage()));
   }
@@ -125,6 +137,7 @@ export class MixedReality {
 
     this.engine.xrScene.add(this.markers.group);
     this.engine.xrScene.add(this.ui.group);
+    this.engine.xrScene.add(this.room.group);
     this.engine.enterTable(this.rig);
     this.rig.root.visible = false;
     this.placement.replace(performance.now() / 1000);
@@ -156,6 +169,11 @@ export class MixedReality {
   /** Tests: what the headset UI shows, and pressing one of its buttons. */
   debugUi(): ReturnType<TableUi["describe"]> {
     return this.ui.describe();
+  }
+
+  /** Tests: the room's current battleground styling. */
+  debugRoom(): { theme: string | null } {
+    return { theme: this.room.current };
   }
 
   debugPanels(): Record<string, string> {
@@ -190,8 +208,21 @@ export class MixedReality {
 
     if (this.state === "placing") this.updatePlacement(now, frame, space);
     this.updateHands(now, frame, space);
+    this.styleRoom(now);
     this.ui.update(now, { mr: this.state, placement: this.placement.state }, this.head.position, this.head.yaw, this.rig);
     this.showLesson();
+  }
+
+  /** The battleground restyles the room: veil, weather, and the board's light on the table. */
+  private styleRoom(now: number): void {
+    const dt = this.lastFrameAt ? Math.min(0.05, now - this.lastFrameAt) : 0;
+    this.lastFrameAt = now;
+    const board: BoardArea | null = this.rig.root.visible
+      ? { center: this.rig.root.position, half: BOARD_HALF_UNITS * this.rig.unitsToMeters }
+      : null;
+    const arena = this.engine.getArena();
+    if (this.room.current !== arena) this.room.setTheme(arena, this.head.position, board);
+    this.room.update(dt, this.head.position, board, this.rig.root.rotation.y);
   }
 
   /** The first-move lesson pulses the suggested move on the board. */
@@ -424,6 +455,8 @@ export class MixedReality {
     this.lessonKey = "";
     this.markers.group.removeFromParent();
     this.ui.group.removeFromParent();
+    this.room.group.removeFromParent();
+    this.lastFrameAt = 0;
     this.rig.showPlinth(false);
     this.table = null;
     this.setState("off");

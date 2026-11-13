@@ -351,6 +351,8 @@ export function GameShell() {
       onFocus: (focused) => {
         if (controller.getSnapshot().status === "playing") controller.setPaused(!focused);
       },
+      // The same path as the battleground picker: board colours, music and room follow.
+      onArena: (theme) => setSettings((current) => (current.arena === theme ? current : { ...current, arena: theme })),
     });
     mixedRef.current = mixed;
     engine.setInteractive(false);
@@ -393,19 +395,20 @@ export function GameShell() {
 
   // ----------------------------------------------------------- apply settings
   //
-  // The muster (armies + battleground) is deliberately pushed only outside a
-  // live duel. The pickers are already locked in the interface while playing;
-  // this is the second lock, so no future caller can swap an army out from under
-  // figures that are mid-fight.
+  // Armies are deliberately pushed only outside a live duel. The pickers are
+  // already locked in the interface while playing; this is the second lock, so
+  // no future caller can swap an army out from under figures that are
+  // mid-fight. The battleground is not locked: it recolours the board and
+  // changes the room and the music, which the headset menu offers mid-match.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
     engine.setQuality(settings.quality);
+    engine.setArena(settings.arena);
+    // The map brings its own music; the mixer crossfades to it, and remembers
+    // the choice if the player has not made a sound yet.
+    audio.setArena(settings.arena);
     if (phase !== "playing") {
-      engine.setArena(settings.arena);
-      // The map brings its own music; the mixer crossfades to it, and remembers
-      // the choice if the player has not made a sound yet.
-      audio.setArena(settings.arena);
       engine.setArmySkins(settings.skins);
     }
     engine.setCaptureCinematics(settings.captureCinematics);
@@ -531,6 +534,7 @@ export function GameShell() {
       ui: () => mixedRef.current?.debugUi() ?? null,
       press: (id: string) => mixedRef.current?.debugPress(id) ?? false,
       panels: () => mixedRef.current?.debugPanels() ?? {},
+      room: () => mixedRef.current?.debugRoom() ?? null,
       /** Look-dev: the table at seat height, seen from a seated eye, no headset. */
       previewTable: (config?: Partial<MatchConfig>) => {
         const engine = engineRef.current;

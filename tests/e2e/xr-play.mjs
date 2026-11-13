@@ -124,6 +124,21 @@ try {
   const afterFirstMove = await page.evaluate(() => window.__xr.ui());
   check(afterFirstMove.coach === "two-hands" || afterFirstMove.coach === "none", "after the first move the lesson moves on", JSON.stringify(afterFirstMove));
 
+  // ---- the room takes on the battleground, and the menu can change it.
+  const roomBefore = await page.evaluate(() => window.__xr.room());
+  check(roomBefore?.theme === "jungle", "the room takes on the battleground (Sun Temple)", JSON.stringify(roomBefore));
+  await page.evaluate(() => window.__xr.press("menu"));
+  await page.evaluate(() => window.__xr.press("arena"));
+  await page.waitForTimeout(600);
+  const roomAfter = await page.evaluate(() => window.__xr.room());
+  check(roomAfter?.theme === "dawn", "Battleground in the headset menu moves to the next map", JSON.stringify(roomAfter));
+  await page.evaluate(() => window.__xr.press("arena")); // dawn -> sands
+  await page.evaluate(() => window.__xr.press("arena")); // sands -> frost: snow in the room
+  await page.waitForTimeout(2000);
+  const snowy = await page.evaluate(() => window.__scene.breakdown());
+  check(Math.round(snowy.calls / 2) <= 150, "with snow falling the table still fits the frame budget", `${Math.round(snowy.calls / 2)} calls per eye`);
+  await page.evaluate(() => window.__xr.press("menu")); // close
+
   // ---- the menu: pick Squire and start a new game from the headset.
   check(await page.evaluate(() => window.__xr.press("menu")), "Menu opens", "");
   check((await page.evaluate(() => window.__xr.ui())).panels.includes("menu"), "the menu card shows", "");

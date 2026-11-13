@@ -5245,9 +5245,11 @@ export class SceneEngine {
     this.arena = theme;
     const look = ARENA_LOOKS[theme];
 
-    this.applyExposure(look.exposure);
-    (this.scene.background as THREE.Color).setHex(look.background);
-    const fog = this.scene.fog as THREE.FogExp2 | null;
+    // On a table the hall's sky and fog are parked in `tableRestore`: change
+    // those copies, so leaving the table comes back to the new map.
+    const background = (this.table ? this.tableRestore?.background : this.scene.background) as THREE.Color | null | undefined;
+    background?.setHex(look.background);
+    const fog = (this.table ? this.tableRestore?.fog : this.scene.fog) as THREE.FogExp2 | null | undefined;
     if (fog) {
       fog.color.setHex(look.fog.color);
       fog.density = look.fog.density;
@@ -5259,6 +5261,16 @@ export class SceneEngine {
     this.dressing.applyArena(look);
     this.landmarks.applyArena(look);
     this.board.applyArena(look);
+    if (this.table && this.tableRestore) {
+      // The map's scenery decides what it would show in the hall; on the
+      // table it stays put away, remembered for the way back.
+      this.tableRestore.scenery = this.tableRestore.scenery.map(([group]) => {
+        const visible = group.visible;
+        group.visible = false;
+        return [group, visible] as const;
+      });
+    }
+    this.applyExposure(this.table ? this.baseExposure() * TABLE_LIGHT.exposure : look.exposure);
     this.postfx.setGrade(look.grade);
     this.postfx.setBloom(look.bloom);
 
