@@ -17,6 +17,8 @@ import { detectQualityPreset, type QualityPreset } from "../scene/quality";
 import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
 import { MixedReality } from "../xr/mixedReality";
 import { isTableXrSupported } from "../xr/session";
+import { TableRig } from "../xr/tableRig";
+import { DEFAULT_BOARD_SIZE } from "../xr/manipulate";
 import { APP_NAME } from "../brand";
 import { clearSavedGame, saveGame } from "../core/persist";
 import { loadStats, recordGame, saveStats, type PlayerStats } from "../core/stats";
@@ -521,6 +523,21 @@ export function GameShell() {
       placement: () => mixedRef.current?.placementState ?? "searching",
       snapshot: () => controller.getSnapshot(),
       pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
+      boardSize: () => mixedRef.current?.boardSize ?? null,
+      /** Look-dev: the table at seat height, seen from a seated eye, no headset. */
+      previewTable: (config?: Partial<MatchConfig>) => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        if (controller.getSnapshot().status !== "playing") {
+          startMatch({ mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null, ...config } as MatchConfig);
+        }
+        const rig = new TableRig();
+        rig.setScale(DEFAULT_BOARD_SIZE);
+        rig.setPose(new THREE.Vector3(0, 0.8, -0.45), 0);
+        engine.enterTable(rig);
+        // Quest 3S: about 96 x 90 degrees per eye; the board sits low in the view.
+        engine.previewTableView(new THREE.Vector3(0, 1.2, 0), new THREE.Vector3(0, 0.82, -0.42), 70);
+      },
       squareWorld: (square: string) => {
         const point = engineRef.current?.squareCenterWorld(square, new THREE.Vector3());
         return point ? { x: point.x, y: point.y, z: point.z } : null;

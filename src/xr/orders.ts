@@ -67,6 +67,11 @@ export class HandOrders {
     }
   }
 
+  /** A second hand joined in to move the board: drop any aim without tapping. An order in hand stays. */
+  cancelAim(): void {
+    if (this.current === "aiming") this.reset();
+  }
+
   private start(point: THREE.Vector3, ray: THREE.Ray | null): void {
     const square = this.engine.figureNear(point, GRAB_RADIUS_M);
     if (square && this.engine.beginOrder(square)) {

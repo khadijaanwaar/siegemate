@@ -61,6 +61,10 @@ export class TableRig {
     return this.multiplier;
   }
 
+  get plinthVisible(): boolean {
+    return this.plinth.visible;
+  }
+
   /** The stand-in slab under the board, for when it hangs at seat height with no real table under it. */
   showPlinth(visible: boolean): void {
     this.plinth.visible = visible;
@@ -89,6 +93,8 @@ export class TableRig {
     // hangs below it so its top is flush with that surface.
     this.content.position.y = BOARD_DEPTH_UNITS * scale;
     this.plinth.position.y = -PLINTH.height / 2;
+    // The stand-in grows with the board, so a bigger board never overhangs it.
+    this.plinth.scale.set(this.multiplier, 1, this.multiplier);
     this.root.updateMatrixWorld(true);
   }
 }

@@ -117,6 +117,41 @@ try {
   const reply = await page.evaluate(() => window.__xr.snapshot().fen);
   check(/ w /.test(reply) && reply !== afterMove.fen, "the machine replies", reply);
 
+  // ---- two hands pinch away from the figures and pull apart: the board grows.
+  const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
+  await page.evaluate(() => {
+    const { left, right } = window.__iwer.hands;
+    for (const hand of [left, right]) {
+      hand.quaternion.set(0, 0, 0, 1);
+      hand.poseId = "open";
+    }
+    // Well above the board, out to the sides: no figure in reach.
+    left.position.set(-0.15, 1.45, -0.35);
+    right.position.set(0.15, 1.45, -0.35);
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    window.__iwer.hands.left.poseId = "pinch";
+    window.__iwer.hands.right.poseId = "pinch";
+  });
+  await page.waitForTimeout(300);
+  for (let step = 1; step <= 8; step += 1) {
+    await page.evaluate((spread) => {
+      window.__iwer.hands.left.position.set(-0.15 - spread, 1.45, -0.35);
+      window.__iwer.hands.right.position.set(0.15 + spread, 1.45, -0.35);
+    }, step * 0.01);
+    await page.waitForTimeout(40);
+  }
+  const sizeDuring = await page.evaluate(() => window.__xr.boardSize());
+  await page.evaluate(() => {
+    window.__iwer.hands.left.poseId = "open";
+    window.__iwer.hands.right.poseId = "open";
+  });
+  await page.waitForTimeout(300);
+  const stored = await page.evaluate(() => localStorage.getItem("mr-chess:board-size"));
+  check(sizeDuring > sizeBefore * 1.15, "pulling two pinched hands apart grows the board", `${sizeBefore} -> ${sizeDuring}`);
+  check(stored !== null && Math.abs(Number(stored) - sizeDuring) < 0.01, "the new size is remembered", String(stored));
+
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-play.png") });
   console.log(`     screenshot: ${join(out, "xr-play.png")}`);

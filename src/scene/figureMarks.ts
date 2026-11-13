@@ -131,6 +131,7 @@ gl_Position = projectionMatrix * mvPosition;`,
 
 const scratchMatrix = new THREE.Matrix4();
 const scratchPosition = new THREE.Vector3();
+const scratchScale = new THREE.Vector3();
 
 /** Visible all the way up, and actually in the scene this layer draws into. */
 function drawnIn(anchor: THREE.Object3D, scene: THREE.Object3D): boolean {
@@ -155,6 +156,8 @@ class MarkLayer {
   private readonly eye = new THREE.Vector3();
   private readonly drawn: FigureMark[] = [];
   private readonly depth = new Map<FigureMark, number>();
+  /** Extra size on top of each anchor's own scale (crests shrink on a real table). */
+  sizeMultiplier = 1;
 
   constructor(
     private readonly style: LayerStyle,
@@ -205,7 +208,9 @@ class MarkLayer {
     const rects = mesh.geometry.getAttribute("markRect") as THREE.InstancedBufferAttribute;
     const alphas = mesh.geometry.getAttribute("markAlpha") as THREE.InstancedBufferAttribute;
     drawn.forEach((mark, index) => {
-      mesh.setMatrixAt(index, scratchMatrix.multiplyMatrices(rootInverse, mark.anchor.matrixWorld));
+      scratchMatrix.multiplyMatrices(rootInverse, mark.anchor.matrixWorld);
+      if (this.sizeMultiplier !== 1) scratchMatrix.scale(scratchScale.setScalar(this.sizeMultiplier));
+      mesh.setMatrixAt(index, scratchMatrix);
       mesh.setColorAt(index, mark.color);
       const rect = atlas.rects[this.cells.get(mark) ?? 0] ?? atlas.rects[0];
       rects.setXYZW(index, rect.x, rect.y, rect.z, rect.w);
@@ -377,6 +382,11 @@ export class FigureMarks {
     while (scene.parent) scene = scene.parent;
     this.rootInverse.copy(this.group.matrixWorld).invert();
     for (const layer of Object.values(this.layers)) layer.sync(this.rootInverse, scene);
+  }
+
+  /** Rank crests at this multiple of their own size (1 in the hall, smaller on a real table). */
+  setCrestScale(multiplier: number): void {
+    this.layers.crest.sizeMultiplier = multiplier;
   }
 
   dispose(): void {

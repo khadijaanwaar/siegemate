@@ -4,6 +4,7 @@ import * as THREE from "three";
 import type { SceneEngine } from "../scene/sceneEngine";
 import { palmFacesHead, palmNormal, PinchTracker } from "./hands";
 import { Markers } from "./markers";
+import { loadBoardSize, saveBoardSize, twoHandTransform, type TwoHandStart } from "./manipulate";
 import { HandOrders } from "./orders";
 import { Placement, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
@@ -20,6 +21,16 @@ export interface MixedRealityHooks {
 }
 
 const HANDS: XRHandedness[] = ["left", "right"];
+
+/** localStorage, or a no-op stand-in where it is unavailable (it can throw in private browsing). */
+function safeStorage(): { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void } {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) return window.localStorage;
+  } catch {
+    // fall through
+  }
+  return { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
+}
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Per-hand state that survives across frames (the hand's input source may come and go). */
@@ -42,6 +53,8 @@ export class MixedReality {
   private readonly hands = new Map<XRHandedness, HandSlot>();
   private hitSource: XRHitTestSource | null = null;
   private state: MixedRealityState = "off";
+  /** Set while both hands pinch away from any figure: they carry, turn and resize the board. */
+  private twoHand: TwoHandStart | null = null;
   private readonly unsubscribe: (() => void)[] = [];
 
   // Scratch, reused every frame.
@@ -62,6 +75,7 @@ export class MixedReality {
     for (const handedness of HANDS) {
       this.hands.set(handedness, { pinch: new PinchTracker(), orders: new HandOrders(engine) });
     }
+    this.rig.setScale(loadBoardSize(safeStorage()));
   }
 
   get current(): MixedRealityState {
@@ -119,6 +133,11 @@ export class MixedReality {
     if (!slot) return null;
     const { x, y, z } = slot.pinch.point;
     return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode };
+  }
+
+  /** The board's size as a multiple of its base (5 cm squares). */
+  get boardSize(): number {
+    return this.rig.scaleMultiplier;
   }
 
   /** "Re-place board": look for the table again. */
@@ -199,6 +218,7 @@ export class MixedReality {
     const seen = new Set<XRHandedness>();
     let rayIndex: 0 | 1 = 0;
     let ordering = false;
+    const reads: { slot: HandSlot; event: ReturnType<PinchTracker["update"]>; ray: THREE.Ray | null }[] = [];
 
     for (const source of this.table?.session.inputSources ?? []) {
       if (!source.hand) continue;
@@ -218,13 +238,47 @@ export class MixedReality {
 
       const event = slot.pinch.update(thumb, index, now, { allowStart: !systemGesture });
       const ray = this.rayOf(frame, source, space);
-
       if (event === "start" && this.confirmPlacement()) continue;
-      if (this.state === "playing") slot.orders.update(event, slot.pinch.point, ray);
+      reads.push({ slot, event, ray });
+    }
 
+    // Both hands pinching, neither holding a figure: they hold the board instead.
+    const left = this.hands.get("left");
+    const right = this.hands.get("right");
+    const bothFree =
+      this.state === "playing" &&
+      left !== undefined &&
+      right !== undefined &&
+      left.pinch.pinching &&
+      right.pinch.pinching &&
+      left.orders.mode !== "ordering" &&
+      right.orders.mode !== "ordering";
+    if (bothFree && left && right) {
+      if (!this.twoHand) {
+        left.orders.cancelAim();
+        right.orders.cancelAim();
+        this.twoHand = {
+          left: left.pinch.point.clone(),
+          right: right.pinch.point.clone(),
+          position: this.rig.root.position.clone(),
+          yaw: this.rig.root.rotation.y,
+          scale: this.rig.scaleMultiplier,
+          keepHeight: !this.rig.plinthVisible,
+        };
+      }
+      const next = twoHandTransform(this.twoHand, { left: left.pinch.point, right: right.pinch.point });
+      this.rig.setPose(next.position, next.yaw);
+      this.rig.setScale(next.scale);
+    } else if (this.twoHand) {
+      this.twoHand = null;
+      saveBoardSize(safeStorage(), this.rig.scaleMultiplier);
+    }
+
+    for (const { slot, event, ray } of reads) {
+      if (this.state === "playing" && !this.twoHand) slot.orders.update(event, slot.pinch.point, ray);
       if (slot.orders.mode === "ordering") ordering = this.showOrder(slot) || ordering;
       if (rayIndex < 2) {
-        this.markers.showRay(rayIndex, slot.orders.mode === "ordering" ? null : ray);
+        this.markers.showRay(rayIndex, slot.orders.mode === "ordering" || this.twoHand ? null : ray);
         rayIndex = (rayIndex + 1) as 0 | 1;
       }
     }

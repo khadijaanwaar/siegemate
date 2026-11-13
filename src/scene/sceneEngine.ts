@@ -145,6 +145,10 @@ const TACTICAL_SHOT: CameraShot = {
 };
 const TACTICAL_FOV = 28;
 const DEFAULT_FOV = 46;
+/** Rank crests on a real table, as a share of their hall size. */
+const TABLE_CREST_SCALE = 0.65;
+/** Light on a real table: sky and key intensities, and the exposure lift over the hall's. */
+const TABLE_LIGHT = { sky: 2.4, key: 2.2, exposure: 1.15 } as const;
 /** How far above the stone (game units, ~a figure's height) a held order still aims at a square. */
 const ORDER_REACH_UNITS = 3.2;
 /** On a table every idle figure updates every other frame (72 Hz -> 36 Hz breathing). */
@@ -996,6 +1000,7 @@ export class SceneEngine {
   /** The real table the game stands on, or null in the 2D hall. */
   private table: TableRig | null = null;
   private tableLight: THREE.HemisphereLight | null = null;
+  private tableKey: THREE.DirectionalLight | null = null;
   /** What table mode changed, to put the hall back exactly. */
   private tableRestore: {
     background: THREE.Scene["background"];
@@ -1277,10 +1282,20 @@ export class SceneEngine {
     this.renderer.setClearAlpha(0);
     this.renderer.shadowMap.enabled = false;
 
-    // The hall's torches and sky stay behind with it: a soft room light from
-    // above keeps the figures readable, the camera lamp still fills their faces.
-    this.tableLight = new THREE.HemisphereLight(0xfff1dc, 0x2e241c, 1.6);
+    // The hall's torches and sky stay behind with it. On a table the figures are
+    // a few centimetres tall and seen against a real, lit room, so they get a
+    // room's light: a bright sky, a key from above the player's shoulder that
+    // turns with the board (no shadow map: contact shadows already ground them),
+    // and the camera lamp still filling their faces.
+    this.tableLight = new THREE.HemisphereLight(0xfff4e6, 0x3a2e24, TABLE_LIGHT.sky);
     rig.root.add(this.tableLight);
+    this.tableKey = new THREE.DirectionalLight(0xfff0dc, TABLE_LIGHT.key);
+    this.tableKey.position.set(-0.35, 1.2, 0.9);
+    this.tableKey.target.position.set(0, 0, 0);
+    rig.root.add(this.tableKey, this.tableKey.target);
+    this.applyExposure(this.baseExposure() * TABLE_LIGHT.exposure);
+    // At table size the crests crowd the far rank: smaller, still readable.
+    this.factory.marks.setCrestScale(TABLE_CREST_SCALE);
 
     rig.content.add(this.world);
     this.scene.add(rig.root);
@@ -1303,6 +1318,14 @@ export class SceneEngine {
       this.tableLight.dispose();
       this.tableLight = null;
     }
+    if (this.tableKey) {
+      this.tableKey.target.removeFromParent();
+      this.tableKey.removeFromParent();
+      this.tableKey.dispose();
+      this.tableKey = null;
+    }
+    this.applyExposure();
+    this.factory.marks.setCrestScale(1);
     for (const [group, visible] of restore.scenery) group.visible = visible;
     this.scene.background = restore.background;
     this.scene.fog = restore.fog;
@@ -1406,6 +1429,21 @@ export class SceneEngine {
   /** XR: the hand was lost mid-order. Nothing is played; the board goes back to rest. */
   cancelOrder(): void {
     this.clearSelection();
+  }
+
+  /**
+   * Tests and look-dev only: on a table but outside a headset, point the
+   * desktop camera like a seated player's eye, to see the table at its real
+   * size without a device.
+   */
+  previewTableView(eye: THREE.Vector3, target: THREE.Vector3, fov: number): void {
+    if (!this.table) return;
+    this.camera.position.copy(eye);
+    this.camera.fov = fov;
+    this.camera.near = 0.02;
+    this.camera.lookAt(target);
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld(true);
   }
 
   /** A world-space point (from a bone or prop) in game space. Null passes through. */
