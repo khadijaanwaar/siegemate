@@ -64,8 +64,26 @@ describe("HandOrders", () => {
     const engine = fakeEngine();
     const orders = new HandOrders(engine);
     orders.update("start", near, ray);
+    orders.update("hold", offBoard, ray);
     orders.update("end", offBoard, ray);
     expect(engine.calls).toContain("release:null");
+  });
+
+  it("releases on the square aimed at while pinched, not where the opening fingers land", () => {
+    const engine = fakeEngine();
+    const orders = new HandOrders(engine);
+    orders.update("start", near, ray);
+    orders.update("hold", overE4, ray);
+    orders.update("end", offBoard, ray); // the fingertips spread as the hand opens
+    expect(engine.calls).toContain("release:e4");
+  });
+
+  it("keeps the figure selected when let go without moving", () => {
+    const engine = fakeEngine();
+    const orders = new HandOrders(engine);
+    orders.update("start", near, ray);
+    orders.update("end", near, ray);
+    expect(engine.calls).toContain("release:e2");
   });
 
   it("aims with the ray when the pinch is not on a figure, and taps where it lets go", () => {

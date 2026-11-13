@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import * as THREE from "three";
 
 import { ARMY_SKINS, DEFAULT_ARMY_SKINS, type ArmySkinId } from "../assets/generated";
 import { audio } from "../audio/audioManager";
@@ -14,6 +15,7 @@ import { Clapperboard } from "lucide-react";
 import { ARENA_LOOKS, DEFAULT_ARENA } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
 import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
+import { MixedReality } from "../xr/mixedReality";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { useHasKeyboard } from "./inputMode";
@@ -208,6 +210,7 @@ function saveRenderPrefs(prefs: RenderPrefs): void {
 export function GameShell() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<SceneEngine | null>(null);
+  const mixedRef = useRef<MixedReality | null>(null);
   const attractTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const controller = useMemo(() => new GameController(), []);
@@ -304,6 +307,14 @@ export function GameShell() {
     }
 
     engineRef.current = engine;
+    // The game on a real table. The system menu or taking the headset off
+    // pauses the match (clocks and the machine's search) until the player is back.
+    const mixed = new MixedReality(engine, {
+      onFocus: (focused) => {
+        if (controller.getSnapshot().status === "playing") controller.setPaused(!focused);
+      },
+    });
+    mixedRef.current = mixed;
     engine.setInteractive(false);
     // Set before the first load so the chosen armies are the ones downloaded.
     engine.setArmySkins(initialArmies);
@@ -320,6 +331,8 @@ export function GameShell() {
     });
 
     return () => {
+      void mixed.exit();
+      mixedRef.current = null;
       engineRef.current = null;
       engine.dispose();
     };
@@ -431,6 +444,29 @@ export function GameShell() {
     },
     [controller, showcaseCamera, stopAttract],
   );
+
+  // Dev and test builds only: drive the mixed reality path from Playwright + IWER.
+  useEffect(() => {
+    if (!(import.meta.env.DEV || import.meta.env.MODE === "test")) return;
+    const hook = {
+      enter: async (config?: Partial<MatchConfig>): Promise<void> => {
+        if (controller.getSnapshot().status !== "playing") {
+          startMatch({ mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null, ...config } as MatchConfig);
+        }
+        await mixedRef.current?.enter();
+      },
+      exit: () => mixedRef.current?.exit(),
+      state: () => mixedRef.current?.current ?? "off",
+      placement: () => mixedRef.current?.placementState ?? "searching",
+      snapshot: () => controller.getSnapshot(),
+      pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
+      squareWorld: (square: string) => {
+        const point = engineRef.current?.squareCenterWorld(square, new THREE.Vector3());
+        return point ? { x: point.x, y: point.y, z: point.z } : null;
+      },
+    };
+    (window as unknown as { __xr: typeof hook }).__xr = hook;
+  }, [controller, startMatch]);
 
   const returnToMenu = useCallback(() => {
     controller.stop();

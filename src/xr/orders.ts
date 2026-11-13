@@ -52,7 +52,9 @@ export class HandOrders {
         else if (this.current === "aiming" && ray) this.aim = this.engine.pickWithRay(ray).square;
         return;
       case "end":
-        if (this.current === "ordering") this.engine.releaseOrder(this.engine.squareAtWorld(point));
+        // The square aimed at while the pinch was still closed: opening the hand
+        // spreads the fingertips and throws their midpoint centimetres off.
+        if (this.current === "ordering") this.engine.releaseOrder(this.aim);
         else if (this.current === "aiming" && this.aim !== null) this.engine.tapSquare(this.aim);
         this.reset();
         return;
