@@ -7,7 +7,7 @@ The deploy is a Pages *Direct Upload* in three steps.
 
 1. **Build** (the asset budget check runs first):
    ```bash
-   npm run build
+   VITE_BUILD_ID=$(git rev-parse --short HEAD) npm run build
    ```
 2. **Upload token** (Cloudflare MCP `execute`; the token lasts 30 minutes and only uploads files to this project):
    ```js
