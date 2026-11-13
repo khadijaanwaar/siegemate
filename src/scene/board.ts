@@ -1,8 +1,19 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import type { SquareId } from "../core/types";
 import type { ArenaLook } from "./arena";
+import { buildOverlayAtlas, type OverlayAtlas, type UvRect } from "./overlayAtlas";
+import {
+  BLEND_ADD,
+  BLEND_OVER,
+  Decal,
+  type DecalStyle,
+  OverlayBatch,
+  createOverlayMaterial,
+  groupFacesByMaterial,
+} from "./overlayBatch";
 import {
   boardBorderTexture,
   captureMarkerTexture,
@@ -213,6 +224,51 @@ export function isLightSquare(square: SquareId): boolean {
   return (file + rank) % 2 === 0;
 }
 
+/*
+ * The board's overlays are drawn in three instanced batches instead of a mesh
+ * apiece (the board used to cost 72 drawables standing still, and hundreds of
+ * draw calls with a piece selected). Each batch's render order brackets the
+ * orders its overlays had against the rest of the scene: the figures' contact
+ * shadows sit at 1, their faction rings at 3.
+ */
+/** Veils (were 1) and glow discs (were 2): after the shadows, under the rings and any smoke. */
+const FLOOR_ORDER = 1.5;
+/** Beams (3), reticles and threads (4), hover ring, ripples and flares (5–7): all added light. */
+const MARK_ORDER = 4;
+/** Drawn through the figures: x-ray reticles (9), order numerals (11), the dismiss coin (12). */
+const XRAY_ORDER = 12;
+
+/** Old plane-geometry sizes, now instance scales on one unit quad. */
+const SHROUD_SIZE = TILE * 1.01;
+const GLOW_SIZE = TILE * 0.98;
+const MARKER_SIZE = TILE * 0.92;
+const HOVER_SIZE = TILE;
+const IMPACT_RING_SIZE = TILE * 2.4;
+const IMPACT_FLARE_SIZE = TILE * 1.5;
+const LANDING_RING_SIZE = TILE * 2.1;
+const LANDING_GLOW_SIZE = TILE * 1.35;
+
+/** `aPart` of the light column inside the marks geometry (the flat quad is 0). */
+const PART_BEAM = 1;
+
+const SHROUD_COLOR = 0x05070e;
+const HOVER_COLOR = 0xffd88a;
+
+/** Atlas cell of each kind's reticle; `last` is a bare glow. */
+const MARKER_CELL: Record<HighlightKind, string | null> = {
+  select: "select",
+  move: "move",
+  capture: "capture",
+  castle: "castle",
+  promote: "promote",
+  last: null,
+  check: "capture",
+  hint: "move",
+  premove: "premove",
+  queued: "premove",
+  queuedTarget: "queuedTarget",
+};
+
 /** A tile knocked out of place by an impact, settling back with damped bounce. */
 interface TileJolt {
   tile: THREE.Mesh;
@@ -224,12 +280,16 @@ interface TileJolt {
   seed: number;
 }
 
+/** Where a square's stone is drawn: which instanced mesh, which instance. */
+interface TileInstance {
+  mesh: THREE.InstancedMesh;
+  index: number;
+}
+
 /** One pooled shockwave ring / flare pair playing on a square. */
 interface ImpactWave {
-  ring: THREE.Mesh;
-  ringMaterial: THREE.MeshBasicMaterial;
-  flare: THREE.Mesh;
-  flareMaterial: THREE.MeshBasicMaterial;
+  ring: Decal;
+  flare: Decal;
   age: number;
   duration: number;
   active: boolean;
@@ -237,10 +297,8 @@ interface ImpactWave {
 
 /** Arrival ripple on the square a figure just set down on. */
 interface LandingRipple {
-  ring: THREE.Mesh;
-  ringMaterial: THREE.MeshBasicMaterial;
-  glow: THREE.Mesh;
-  glowMaterial: THREE.MeshBasicMaterial;
+  ring: Decal;
+  glow: Decal;
   age: number;
   duration: number;
   strength: number;
@@ -249,8 +307,7 @@ interface LandingRipple {
 
 /** A dark veil laid over a square the selected piece cannot reach. */
 interface ShroudSlot {
-  mesh: THREE.Mesh;
-  material: THREE.MeshBasicMaterial;
+  veil: Decal;
   target: number;
   current: number;
   /** Seconds still to wait before this square starts fading. */
@@ -258,15 +315,13 @@ interface ShroudSlot {
 }
 
 interface HighlightSlot {
-  glow: THREE.Mesh;
-  glowMaterial: THREE.MeshBasicMaterial;
-  marker: THREE.Mesh;
-  markerMaterial: THREE.MeshBasicMaterial;
+  glow: Decal;
+  marker: Decal;
   /** The same reticle again, drawn through anything standing in the way. */
-  xray: THREE.Mesh;
-  xrayMaterial: THREE.MeshBasicMaterial;
-  beam: THREE.Mesh;
-  beamMaterial: THREE.MeshBasicMaterial;
+  xray: Decal;
+  beam: Decal;
+  /** How the current kind's reticle is drawn, or `null` for a bare glow. */
+  markerStyle: DecalStyle | null;
   kind: HighlightKind | null;
   pulse: boolean;
   /** Seconds since the highlight was set; negative while waiting on its stagger. */
@@ -274,46 +329,93 @@ interface HighlightSlot {
   phase: number;
 }
 
+interface OverlayStyles {
+  veil: DecalStyle;
+  glow: DecalStyle;
+  beam: DecalStyle;
+  thread: DecalStyle;
+  hover: DecalStyle;
+  landingGlow: DecalStyle;
+  landingRing: DecalStyle;
+  impactRing: DecalStyle;
+  flare: DecalStyle;
+  coin: DecalStyle;
+  orders: DecalStyle[];
+}
+
+/** The pointer ring as a picture: the old ring geometry spanned 0.42–0.48 of a tile. */
+function hoverRingCanvas(): HTMLCanvasElement {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2D canvas context unavailable");
+  const centre = size / 2;
+  const pixelsPerUnit = size / HOVER_SIZE;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(centre, centre, TILE * 0.48 * pixelsPerUnit, 0, Math.PI * 2);
+  ctx.arc(centre, centre, TILE * 0.42 * pixelsPerUnit, 0, Math.PI * 2, true);
+  ctx.fill();
+  return canvas;
+}
+
+/** A flat unit quad and the beam's open column in one geometry, told apart by `aPart`. */
+function markGeometry(): THREE.BufferGeometry {
+  const quad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const column = new THREE.CylinderGeometry(TILE * 0.4, TILE * 0.44, 0.55, 20, 1, true);
+  const tag = (geometry: THREE.BufferGeometry, part: number): void => {
+    const count = geometry.getAttribute("position").count;
+    geometry.setAttribute("aPart", new THREE.Float32BufferAttribute(new Float32Array(count).fill(part), 1));
+  };
+  tag(quad, 0);
+  tag(column, PART_BEAM);
+  const merged = mergeGeometries([quad, column]);
+  quad.dispose();
+  column.dispose();
+  if (!merged) throw new Error("board: could not merge the mark shapes");
+  merged.deleteAttribute("normal");
+  return merged;
+}
+
+/** A flat unit quad lying on the board, for the batches that need nothing else. */
+function quadGeometry(): THREE.BufferGeometry {
+  const quad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  quad.deleteAttribute("normal");
+  return quad;
+}
+
 /**
  * The playing surface: 64 bevelled marble/basalt tiles on a carved base with a
  * bronze-trimmed, engraved border, plus the pooled highlight overlays.
+ *
+ * Drawn in a handful of calls: the tiles are two instanced meshes (light and
+ * dark keep their own materials), the base two, the trim one, and every
+ * overlay goes through one of three instanced batches sharing a texture atlas.
  */
 export class BoardView {
   readonly group = new THREE.Group();
+  /** One invisible stand-in per square, for picking; the stone itself is drawn instanced. */
   readonly tiles: THREE.Mesh[] = [];
 
   private slots = new Map<SquareId, HighlightSlot>();
   /** Held down while a modal panel owns the screen (the promotion picker). */
   private overlaysMuted = false;
   private shrouds = new Map<SquareId, ShroudSlot>();
-  private markerMaps: Record<HighlightKind, THREE.Texture | null> = {
-    select: null,
-    move: null,
-    capture: null,
-    castle: null,
-    promote: null,
-    last: null,
-    check: null,
-    hint: null,
-    premove: null,
-    queued: null,
-    queuedTarget: null,
-  };
-  private hoverRing: THREE.Mesh;
+  private hoverRing = new Decal();
   /** Threads drawn along each link of the queued chain. */
-  private premoveLinks: THREE.Mesh[] = [];
-  /** One material per link: each thread carries its own place in the chain. */
-  private premoveLinkMaterials: THREE.MeshBasicMaterial[] = [];
+  private premoveLinks: Decal[] = [];
   /** The dismiss coin hanging over a queued move's destination. */
-  private premoveCancel!: THREE.Sprite;
-  private premoveCancelMaterial!: THREE.SpriteMaterial;
+  private coin = new Decal();
+  /** Invisible twin of the coin, kept where it is drawn so a ray can find it. */
+  private premoveCancel: THREE.Sprite;
   private premoveCancelSquare: SquareId | null = null;
   private premoveCancelHot = false;
   private premoveCancelHeat = 0;
   private premoveCancelAge = 0;
   /** The 1..5 numerals riding over each square of the queued chain. */
-  private premoveOrders: THREE.Sprite[] = [];
-  private premoveOrderMaterials: THREE.SpriteMaterial[] = [];
+  private premoveOrders: Decal[] = [];
   private premoveOrderAges: number[] = [];
   /** Materials the arena theme repaints (tile contrast, base stone, trim). */
   private lightTileMaterial: THREE.MeshPhysicalMaterial;
@@ -324,11 +426,21 @@ export class BoardView {
   private disposables: { dispose: () => void }[] = [];
   private elapsed = 0;
   private tileBySquare = new Map<SquareId, THREE.Mesh>();
+  private tileInstances = new Map<THREE.Mesh, TileInstance>();
   private jolts: TileJolt[] = [];
   private waves: ImpactWave[] = [];
   private waveCursor = 0;
   private landings: LandingRipple[] = [];
   private landingCursor = 0;
+
+  /** Shroud veils and glow discs (mixed blending: the veil darkens, the glows add). */
+  private floor: OverlayBatch;
+  /** Reticles, beams, threads, the hover ring, ripples and flares. */
+  private marks: OverlayBatch;
+  /** Everything drawn through the figures: x-ray reticles, order numerals, the coin. */
+  private xrays: OverlayBatch;
+  private styles: OverlayStyles;
+  private markerStyles: Record<HighlightKind, DecalStyle | null>;
 
   constructor() {
     this.group.name = "board";
@@ -362,77 +474,203 @@ export class BoardView {
     this.darkTileMaterial = darkMaterial;
 
     const tileGeometry = this.track(new RoundedBoxGeometry(TILE * 0.97, 0.18, TILE * 0.97, 3, 0.035));
+    this.buildTiles(tileGeometry, lightMaterial, darkMaterial);
+    this.buildBase();
+
+    const atlas = this.buildAtlas();
+    const map = atlas.texture;
+    const rect = (key: string): UvRect => {
+      const found = atlas.rects.get(key);
+      if (!found) throw new Error(`board: atlas cell "${key}" missing`);
+      return found;
+    };
+    this.styles = {
+      veil: { size: SHROUD_SIZE, rect: rect("veil"), blend: BLEND_OVER },
+      // One full-strength disc stands in for the 0.95 / 0.9 copies the glows used.
+      glow: { size: GLOW_SIZE, rect: rect("disc"), blend: BLEND_ADD, alpha: 0.95 },
+      beam: { size: 1, rect: rect("column"), blend: BLEND_ADD, part: PART_BEAM },
+      thread: { size: 1, rect: rect("thread"), blend: BLEND_ADD },
+      hover: { size: HOVER_SIZE, rect: rect("hover"), blend: BLEND_ADD },
+      landingGlow: { size: LANDING_GLOW_SIZE, rect: rect("disc"), blend: BLEND_ADD, alpha: 0.9 },
+      landingRing: { size: LANDING_RING_SIZE, rect: rect("landing"), blend: BLEND_ADD },
+      impactRing: { size: IMPACT_RING_SIZE, rect: rect("shock"), blend: BLEND_ADD },
+      flare: { size: IMPACT_FLARE_SIZE, rect: rect("disc"), blend: BLEND_ADD },
+      coin: { size: 1, rect: rect("coin"), blend: BLEND_OVER, billboard: true },
+      orders: Array.from({ length: MAX_PREMOVE_LINKS }, (_, index) => ({
+        size: 1,
+        rect: rect(`order${index + 1}`),
+        blend: BLEND_OVER,
+        billboard: true,
+      })),
+    };
+    const markerStyle = (kind: HighlightKind): DecalStyle | null => {
+      const cell = MARKER_CELL[kind];
+      return cell ? { size: MARKER_SIZE, rect: rect(cell), blend: BLEND_ADD } : null;
+    };
+    this.markerStyles = {
+      select: markerStyle("select"),
+      move: markerStyle("move"),
+      capture: markerStyle("capture"),
+      castle: markerStyle("castle"),
+      promote: markerStyle("promote"),
+      last: markerStyle("last"),
+      check: markerStyle("check"),
+      hint: markerStyle("hint"),
+      premove: markerStyle("premove"),
+      queued: markerStyle("queued"),
+      queuedTarget: markerStyle("queuedTarget"),
+    };
+
+    this.floor = this.track(
+      new OverlayBatch(
+        "board-floor",
+        quadGeometry(),
+        this.track(createOverlayMaterial({ map, blend: "mixed", depthTest: true })),
+        64 * 2,
+        FLOOR_ORDER,
+      ),
+    );
+    this.marks = this.track(
+      new OverlayBatch(
+        "board-marks",
+        markGeometry(),
+        this.track(
+          createOverlayMaterial({ map, blend: "additive", depthTest: true, side: THREE.DoubleSide, parts: true }),
+        ),
+        64 * 2 + MAX_PREMOVE_LINKS + 1 + 5 * 2 + 4 * 2,
+        MARK_ORDER,
+      ),
+    );
+    this.xrays = this.track(
+      new OverlayBatch(
+        "board-xray",
+        quadGeometry(),
+        this.track(createOverlayMaterial({ map, blend: "mixed", depthTest: false, billboards: true })),
+        64 + MAX_PREMOVE_LINKS + 1,
+        XRAY_ORDER,
+      ),
+    );
+    this.group.add(this.floor.mesh, this.marks.mesh, this.xrays.mesh);
+
+    this.buildShroud();
+    this.buildHighlights();
+    this.buildImpactWaves();
+    this.buildLandingRipples();
+
+    this.hoverRing.color.setHex(HOVER_COLOR);
+    this.hoverRing.position.y = BOARD_TOP + 0.012;
+    this.hoverRing.visible = true;
+
+    this.buildPremoveLink();
+    this.premoveCancel = this.buildPremoveCancel();
+    this.buildPremoveOrders();
+  }
+
+  /**
+   * One texture for every overlay picture, so the overlays can share draws.
+   * The source canvases are painted by the same functions as before and only
+   * copied; the per-picture textures are never uploaded.
+   */
+  private buildAtlas(): OverlayAtlas {
+    const sources: { key: string; texture: THREE.CanvasTexture }[] = [
+      { key: "veil", texture: tileMaskTexture() },
+      { key: "disc", texture: radialTexture("rgba(255,255,255,1)", "rgba(255,255,255,0)") },
+      { key: "column", texture: columnTexture() },
+      { key: "thread", texture: premoveThreadTexture() },
+      { key: "shock", texture: shockwaveTexture() },
+      { key: "landing", texture: landingRingTexture() },
+      { key: "select", texture: selectMarkerTexture() },
+      { key: "move", texture: moveMarkerTexture() },
+      { key: "capture", texture: captureMarkerTexture() },
+      { key: "castle", texture: castleMarkerTexture() },
+      { key: "promote", texture: promoteMarkerTexture() },
+      { key: "premove", texture: premoveMarkerTexture() },
+      { key: "queuedTarget", texture: premoveTargetTexture() },
+      { key: "coin", texture: premoveCancelTexture() },
+      ...Array.from({ length: MAX_PREMOVE_LINKS }, (_, index) => ({
+        key: `order${index + 1}`,
+        texture: premoveOrderTexture(index + 1),
+      })),
+    ];
+    const atlas = buildOverlayAtlas([
+      ...sources.map(({ key, texture }) => ({ key, image: texture.image })),
+      { key: "hover", image: hoverRingCanvas() },
+    ]);
+    for (const { texture } of sources) texture.dispose();
+    this.track(atlas.texture);
+    return atlas;
+  }
+
+  /**
+   * Two instanced meshes, light and dark, each keeping its own marble and
+   * finish. Picking still wants an object per square, so each square also gets
+   * an invisible stand-in; a jolt moves the stand-in and copies it across.
+   */
+  private buildTiles(
+    geometry: THREE.BufferGeometry,
+    lightMaterial: THREE.Material,
+    darkMaterial: THREE.Material,
+  ): void {
+    const lightTiles = this.track(new THREE.InstancedMesh(geometry, lightMaterial, 32));
+    const darkTiles = this.track(new THREE.InstancedMesh(geometry, darkMaterial, 32));
+    lightTiles.name = "board-tiles-light";
+    darkTiles.name = "board-tiles-dark";
+    const pickMaterial = this.track(new THREE.MeshBasicMaterial());
+    let lightIndex = 0;
+    let darkIndex = 0;
 
     for (let rank = 1; rank <= 8; rank += 1) {
       for (let fileIndex = 0; fileIndex < 8; fileIndex += 1) {
         const square = `${FILES[fileIndex]}${rank}`;
         const light = isLightSquare(square);
-        const tile = new THREE.Mesh(tileGeometry, light ? lightMaterial : darkMaterial);
+        const tile = new THREE.Mesh(geometry, pickMaterial);
         const position = squareToWorld(square, -0.09);
         tile.position.copy(position);
-        tile.receiveShadow = true;
-        tile.castShadow = false;
+        tile.visible = false;
         tile.userData.square = square;
         tile.userData.home = position.clone();
+        tile.updateMatrix();
+        const mesh = light ? lightTiles : darkTiles;
+        const index = light ? lightIndex++ : darkIndex++;
+        mesh.setMatrixAt(index, tile.matrix);
+        this.tileInstances.set(tile, { mesh, index });
         this.tileBySquare.set(square, tile);
         this.tiles.push(tile);
         this.group.add(tile);
       }
     }
 
-    this.buildBase();
-    this.buildShroud();
-    this.buildHighlights();
-    this.buildImpactWaves();
-    this.buildLandingRipples();
+    for (const mesh of [lightTiles, darkTiles]) {
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      mesh.computeBoundingSphere();
+      // Room for a jolted tile to leave its square for a moment.
+      if (mesh.boundingSphere) mesh.boundingSphere.radius += 0.5;
+      this.group.add(mesh);
+    }
+  }
 
-    const ringGeometry = this.track(new THREE.RingGeometry(TILE * 0.42, TILE * 0.48, 32));
-    const ringMaterial = this.track(
-      new THREE.MeshBasicMaterial({
-        color: 0xffd88a,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    this.hoverRing = new THREE.Mesh(ringGeometry, ringMaterial);
-    this.hoverRing.rotation.x = -Math.PI / 2;
-    this.hoverRing.position.y = BOARD_TOP + 0.012;
-    this.hoverRing.renderOrder = 5;
-    this.group.add(this.hoverRing);
-
-    this.buildPremoveLink();
-    this.buildPremoveCancel();
-    this.buildPremoveOrders();
+  /** Copies a stand-in tile's pose onto the instance that draws it. */
+  private syncTile(tile: THREE.Mesh): void {
+    const instance = this.tileInstances.get(tile);
+    if (!instance) return;
+    tile.updateMatrix();
+    instance.mesh.setMatrixAt(instance.index, tile.matrix);
+    instance.mesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
-   * The order numerals. Like the coin they are sprites with the depth test off:
-   * a chain runs *through* the figures still standing on the board, so the one
-   * mark that says "this happens third" cannot be the one hidden behind a rook.
+   * The order numerals. Like the coin they ignore the depth buffer: a chain
+   * runs *through* the figures still standing on the board, so the one mark
+   * that says "this happens third" cannot be the one hidden behind a rook.
    */
   private buildPremoveOrders(): void {
     for (let index = 0; index < MAX_PREMOVE_LINKS; index += 1) {
-      const material = this.track(
-        new THREE.SpriteMaterial({
-          map: this.track(premoveOrderTexture(index + 1)),
-          color: ORDER_TINT.clone(),
-          transparent: true,
-          opacity: 0,
-          depthTest: false,
-          depthWrite: false,
-        }),
-      );
-      const sprite = new THREE.Sprite(material);
-      sprite.visible = false;
-      // Under the coin (12) so a numeral never draws over the dismiss button.
-      sprite.renderOrder = 11;
-      sprite.scale.setScalar(ORDER_SIZE);
-      this.premoveOrders.push(sprite);
-      this.premoveOrderMaterials.push(material);
+      const order = new Decal();
+      order.color.copy(ORDER_TINT);
+      order.scale.setScalar(ORDER_SIZE);
+      this.premoveOrders.push(order);
       this.premoveOrderAges.push(0);
-      this.group.add(sprite);
     }
   }
 
@@ -447,24 +685,24 @@ export class BoardView {
   setPremoveOrders(squares: SquareId[]): void {
     const numbered = squares.length > 1 ? squares : [];
     for (let index = 0; index < this.premoveOrders.length; index += 1) {
-      const sprite = this.premoveOrders[index];
+      const order = this.premoveOrders[index];
       const square = numbered[index];
       if (!square) {
-        sprite.visible = false;
-        this.premoveOrderMaterials[index].opacity = 0;
+        order.visible = false;
+        order.opacity = 0;
         continue;
       }
       const centre = squareToWorld(square, BOARD_TOP);
-      sprite.position.set(centre.x, BOARD_TOP + ORDER_LIFT, centre.z);
-      if (!sprite.visible) {
+      order.position.set(centre.x, BOARD_TOP + ORDER_LIFT, centre.z);
+      if (!order.visible) {
         this.premoveOrderAges[index] = 0;
-        this.premoveOrderMaterials[index].opacity = 0;
+        order.opacity = 0;
       }
       // The head of the chain is the link that runs next, so it is the bright
       // one; the tail dims off so the eye reads the plan in order.
       const fade = index === 0 ? 1 : Math.max(0.62, 1 - index * 0.1);
-      this.premoveOrderMaterials[index].color.copy(ORDER_TINT).multiplyScalar(fade);
-      sprite.visible = !this.overlaysMuted;
+      order.color.copy(ORDER_TINT).multiplyScalar(fade);
+      order.visible = !this.overlaysMuted;
     }
   }
 
@@ -473,62 +711,35 @@ export class BoardView {
    * unrelated lights on a busy board; the lines are what make them one *plan*
    * at a glance, and they breathe so they are never mistaken for played moves.
    *
-   * One mesh per possible link, built up front and shown as needed: the deepest
-   * queue the game allows is five, so there is nothing to allocate mid-game.
-   * Each link gets its **own** material, because a thread has to carry two
-   * things a shared one could not: which way it runs (the gradient map, whose
-   * local +x always points at the destination) and how far down the chain it
-   * sits (its tint).
+   * One thread per possible link, ready up front: the deepest queue the game
+   * allows is five. Each carries which way it runs (its spin, which keeps the
+   * comet texture's +x pointed at the destination) and how far down the chain
+   * it sits (its tint).
    */
   private buildPremoveLink(): void {
-    const geometry = this.track(new THREE.PlaneGeometry(1, 1));
-    geometry.rotateX(-Math.PI / 2);
-    const map = this.track(premoveThreadTexture());
     for (let index = 0; index < MAX_PREMOVE_LINKS; index += 1) {
-      const material = this.track(
-        new THREE.MeshBasicMaterial({
-          map,
-          color: THREAD_HEAD.clone(),
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      this.premoveLinkMaterials.push(material);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.y = BOARD_TOP + 0.018;
-      mesh.visible = false;
-      mesh.renderOrder = 4;
-      this.premoveLinks.push(mesh);
-      this.group.add(mesh);
+      const link = new Decal();
+      link.color.copy(THREAD_HEAD);
+      link.position.y = BOARD_TOP + 0.018;
+      this.premoveLinks.push(link);
     }
   }
 
   /**
-   * The dismiss coin. It is a sprite so it always faces the player from any
-   * camera angle, and it ignores the depth buffer: a cancel button hidden
-   * behind the figure standing in front of it would be a cancel button that
-   * does not exist.
+   * The dismiss coin. It faces the player from any camera angle like a sprite,
+   * and it ignores the depth buffer: a cancel button hidden behind the figure
+   * standing in front of it would be a cancel button that does not exist. It is
+   * drawn in the x-ray batch; the sprite returned here only answers rays.
    */
-  private buildPremoveCancel(): void {
-    const material = this.track(
-      new THREE.SpriteMaterial({
-        map: this.track(premoveCancelTexture()),
-        color: CANCEL_COLD.clone(),
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        depthWrite: false,
-      }),
-    );
-    this.premoveCancelMaterial = material;
-    const sprite = new THREE.Sprite(material);
-    sprite.visible = false;
-    sprite.renderOrder = 12;
-    sprite.scale.setScalar(CANCEL_SIZE);
-    this.premoveCancel = sprite;
-    this.group.add(sprite);
+  private buildPremoveCancel(): THREE.Sprite {
+    this.coin.color.copy(CANCEL_COLD);
+    this.coin.scale.setScalar(CANCEL_SIZE);
+    const handle = new THREE.Sprite(this.track(new THREE.SpriteMaterial()));
+    handle.name = "premove-cancel";
+    handle.visible = false;
+    handle.scale.setScalar(CANCEL_SIZE);
+    this.group.add(handle);
+    return handle;
   }
 
   /** Hangs the dismiss coin over a square, or takes it away. */
@@ -537,17 +748,18 @@ export class BoardView {
     this.premoveCancelSquare = square;
     this.premoveCancelHot = false;
     this.premoveCancelHeat = 0;
-    this.premoveCancelMaterial.color.copy(CANCEL_COLD);
+    this.coin.color.copy(CANCEL_COLD);
     if (!square) {
-      this.premoveCancel.visible = false;
-      this.premoveCancelMaterial.opacity = 0;
+      this.coin.visible = false;
+      this.coin.opacity = 0;
       return;
     }
     const centre = squareToWorld(square, BOARD_TOP);
-    this.premoveCancel.position.set(centre.x, BOARD_TOP + CANCEL_LIFT, centre.z);
+    this.coin.position.set(centre.x, BOARD_TOP + CANCEL_LIFT, centre.z);
+    this.premoveCancel.position.copy(this.coin.position);
     this.premoveCancelAge = 0;
-    this.premoveCancelMaterial.opacity = 0;
-    this.premoveCancel.visible = !this.overlaysMuted;
+    this.coin.opacity = 0;
+    this.coin.visible = !this.overlaysMuted;
   }
 
   /** Lights the coin up while the pointer is on it. */
@@ -557,46 +769,46 @@ export class BoardView {
 
   /** The coin as a ray target, or `null` when there is nothing to dismiss. */
   premoveCancelHandle(): THREE.Object3D | null {
-    return this.premoveCancel.visible && this.premoveCancelSquare ? this.premoveCancel : null;
+    return this.coin.visible && this.premoveCancelSquare ? this.premoveCancel : null;
   }
 
   /**
    * Lays a thread along every link of the queued chain, or takes them away.
    *
-   * The mesh's local +x is the direction of travel — `atan2(-dz, dx)` aims it
+   * The thread's local +x is the direction of travel — `atan2(-dz, dx)` aims it
    * from the origin at the destination — and the gradient map is painted along
    * that same axis, so the comet always burns *into* the square the plan is
    * entering without any per-link texture work.
    */
   setPremoveLinks(moves: { from: SquareId; to: SquareId }[]): void {
     for (let index = 0; index < this.premoveLinks.length; index += 1) {
-      const mesh = this.premoveLinks[index];
+      const link = this.premoveLinks[index];
       const move = moves[index];
       if (!move) {
-        mesh.visible = false;
-        this.premoveLinkMaterials[index].opacity = 0;
+        link.visible = false;
+        link.opacity = 0;
         continue;
       }
       // The link that runs next is steel; the ones behind it cool toward the
       // pewter of an origin ring, so the chain reads in order along its lines.
       const depth = moves.length > 1 ? index / (moves.length - 1) : 0;
-      this.premoveLinkMaterials[index].color.copy(THREAD_HEAD).lerp(THREAD_TAIL, depth * 0.85);
+      link.color.copy(THREAD_HEAD).lerp(THREAD_TAIL, depth * 0.85);
       const from = squareToWorld(move.from, BOARD_TOP);
       const to = squareToWorld(move.to, BOARD_TOP);
       const dx = to.x - from.x;
       const dz = to.z - from.z;
       const length = Math.hypot(dx, dz);
       if (length < 0.001) {
-        mesh.visible = false;
-        this.premoveLinkMaterials[index].opacity = 0;
+        link.visible = false;
+        link.opacity = 0;
         continue;
       }
-      mesh.position.set((from.x + to.x) / 2, BOARD_TOP + 0.018, (from.z + to.z) / 2);
-      mesh.rotation.y = Math.atan2(-dz, dx);
+      link.position.set((from.x + to.x) / 2, BOARD_TOP + 0.018, (from.z + to.z) / 2);
+      link.spin = Math.atan2(-dz, dx);
       // Pulled in at both ends so the thread starts and stops inside the two
       // reticles rather than crossing them.
-      mesh.scale.set(Math.max(0.2, length - TILE * 0.5), 1, TILE * 0.22);
-      mesh.visible = true;
+      link.scale.set(Math.max(0.2, length - TILE * 0.5), 1, TILE * 0.22);
+      link.visible = true;
     }
   }
 
@@ -608,6 +820,9 @@ export class BoardView {
   private buildBase(): void {
     const size = TILE * 8 + 1.5;
     const geometry = this.track(new RoundedBoxGeometry(size, 0.62, size, 4, 0.09));
+    // Box faces are +x, -x, +y, -y, +z, -z: the five stone faces become one
+    // draw and the inlaid top another, instead of one draw per face.
+    groupFacesByMaterial(geometry, [0, 0, 1, 0, 0, 0]);
     const stone = this.track(
       new THREE.MeshStandardMaterial({ color: 0x3b342b, roughness: 0.72, metalness: 0.25 }),
     );
@@ -622,8 +837,8 @@ export class BoardView {
       }),
     );
     this.borderMaterial = top;
-    const materials = [stone, stone, top, stone, stone, stone];
-    const base = new THREE.Mesh(geometry, materials);
+    const base = new THREE.Mesh(geometry, [stone, top]);
+    base.name = "board-base";
     base.position.y = -0.42;
     base.castShadow = true;
     base.receiveShadow = true;
@@ -643,116 +858,31 @@ export class BoardView {
     );
     this.trimMaterial = trim;
     const trimMesh = new THREE.Mesh(trimGeometry, trim);
+    trimMesh.name = "board-trim";
     trimMesh.position.y = -0.7;
     trimMesh.castShadow = true;
     this.group.add(trimMesh);
   }
 
   private buildHighlights(): void {
-    const glowGeometry = this.track(new THREE.PlaneGeometry(TILE * 0.98, TILE * 0.98));
-    const markerGeometry = this.track(new THREE.PlaneGeometry(TILE * 0.92, TILE * 0.92));
-    const beamGeometry = this.track(
-      new THREE.CylinderGeometry(TILE * 0.4, TILE * 0.44, 0.55, 20, 1, true),
-    );
-    const glowMap = this.track(radialTexture("rgba(255,255,255,0.95)", "rgba(255,255,255,0)"));
-    const beamMap = this.track(columnTexture());
-    this.markerMaps = {
-      select: this.track(selectMarkerTexture()),
-      move: this.track(moveMarkerTexture()),
-      capture: this.track(captureMarkerTexture()),
-      castle: this.track(castleMarkerTexture()),
-      promote: this.track(promoteMarkerTexture()),
-      check: this.track(captureMarkerTexture()),
-      hint: this.track(moveMarkerTexture()),
-      last: null,
-      premove: this.track(premoveMarkerTexture()),
-      queued: this.track(premoveMarkerTexture()),
-      queuedTarget: this.track(premoveTargetTexture()),
-    };
-
     let index = 0;
     for (let rank = 1; rank <= 8; rank += 1) {
       for (let fileIndex = 0; fileIndex < 8; fileIndex += 1) {
         const square = `${FILES[fileIndex]}${rank}`;
-
-        const glowMaterial = this.track(
-          new THREE.MeshBasicMaterial({
-            map: glowMap,
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-        glow.rotation.x = -Math.PI / 2;
+        const glow = new Decal();
         glow.position.copy(squareToWorld(square, BOARD_TOP + 0.008));
-        glow.visible = false;
-        glow.renderOrder = 2;
-        this.group.add(glow);
-
-        const markerMaterial = this.track(
-          new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker.rotation.x = -Math.PI / 2;
+        const marker = new Decal();
         marker.position.copy(squareToWorld(square, BOARD_TOP + 0.016));
-        marker.visible = false;
-        marker.renderOrder = 4;
-        this.group.add(marker);
-
-        const xrayMaterial = this.track(
-          new THREE.MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0,
-            depthTest: false,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        const xray = new THREE.Mesh(markerGeometry, xrayMaterial);
-        xray.rotation.x = -Math.PI / 2;
+        const xray = new Decal();
         xray.position.copy(squareToWorld(square, BOARD_TOP + 0.017));
-        xray.visible = false;
-        // Above every board overlay: with no depth test to sort it, render order
-        // is the only thing keeping it on top of the glow it belongs to.
-        xray.renderOrder = 9;
-        this.group.add(xray);
-
-        const beamMaterial = this.track(
-          new THREE.MeshBasicMaterial({
-            map: beamMap,
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+        const beam = new Decal();
         beam.position.copy(squareToWorld(square, BOARD_TOP + 0.275));
-        beam.visible = false;
-        beam.renderOrder = 3;
-        this.group.add(beam);
-
         this.slots.set(square, {
           glow,
-          glowMaterial,
           marker,
-          markerMaterial,
           xray,
-          xrayMaterial,
           beam,
-          beamMaterial,
+          markerStyle: null,
           kind: null,
           pulse: false,
           age: 0,
@@ -769,28 +899,13 @@ export class BoardView {
    * read instantly instead of competing with 64 evenly-lit tiles.
    */
   private buildShroud(): void {
-    const geometry = this.track(new THREE.PlaneGeometry(TILE * 1.01, TILE * 1.01));
-    const map = this.track(tileMaskTexture());
-
     for (let rank = 1; rank <= 8; rank += 1) {
       for (let fileIndex = 0; fileIndex < 8; fileIndex += 1) {
         const square = `${FILES[fileIndex]}${rank}`;
-        const material = this.track(
-          new THREE.MeshBasicMaterial({
-            map,
-            color: 0x05070e,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-          }),
-        );
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.copy(squareToWorld(square, BOARD_TOP + 0.004));
-        mesh.visible = false;
-        mesh.renderOrder = 1;
-        this.group.add(mesh);
-        this.shrouds.set(square, { mesh, material, target: 0, current: 0, delay: 0 });
+        const veil = new Decal();
+        veil.color.setHex(SHROUD_COLOR);
+        veil.position.copy(squareToWorld(square, BOARD_TOP + 0.004));
+        this.shrouds.set(square, { veil, target: 0, current: 0, delay: 0 });
       }
     }
   }
@@ -828,104 +943,32 @@ export class BoardView {
       if (Math.abs(slot.target - slot.current) < 0.002) {
         if (slot.current !== slot.target) {
           slot.current = slot.target;
-          slot.material.opacity = slot.current;
-          slot.mesh.visible = slot.current > 0.004;
+          slot.veil.opacity = slot.current;
+          slot.veil.visible = slot.current > 0.004;
         }
         continue;
       }
       // Closes in a touch slower than it lifts, so releasing feels snappy.
       const speed = slot.target > slot.current ? 8 : 13;
       slot.current += (slot.target - slot.current) * Math.min(1, delta * speed);
-      slot.material.opacity = slot.current;
-      slot.mesh.visible = slot.current > 0.004;
+      slot.veil.opacity = slot.current;
+      slot.veil.visible = slot.current > 0.004;
     }
   }
 
   /** Pool of reusable shockwave rings + flares for capture impacts. */
   private buildImpactWaves(): void {
-    const ringGeometry = this.track(new THREE.PlaneGeometry(TILE * 2.4, TILE * 2.4));
-    const flareGeometry = this.track(new THREE.PlaneGeometry(TILE * 1.5, TILE * 1.5));
-    const ringMap = this.track(shockwaveTexture());
-    const flareMap = this.track(radialTexture("rgba(255,255,255,1)", "rgba(255,255,255,0)"));
-
     for (let i = 0; i < 4; i += 1) {
-      const ringMaterial = this.track(
-        new THREE.MeshBasicMaterial({
-          map: ringMap,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.rotation.x = -Math.PI / 2;
-      ring.visible = false;
-      ring.renderOrder = 6;
-      this.group.add(ring);
-
-      const flareMaterial = this.track(
-        new THREE.MeshBasicMaterial({
-          map: flareMap,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      const flare = new THREE.Mesh(flareGeometry, flareMaterial);
-      flare.rotation.x = -Math.PI / 2;
-      flare.visible = false;
-      flare.renderOrder = 7;
-      this.group.add(flare);
-
-      this.waves.push({ ring, ringMaterial, flare, flareMaterial, age: 0, duration: 0.5, active: false });
+      this.waves.push({ ring: new Decal(), flare: new Decal(), age: 0, duration: 0.5, active: false });
     }
   }
 
   /** Pool of reusable arrival ripples: a dust ring plus a soft ground glow. */
   private buildLandingRipples(): void {
-    const ringGeometry = this.track(new THREE.PlaneGeometry(TILE * 2.1, TILE * 2.1));
-    const glowGeometry = this.track(new THREE.PlaneGeometry(TILE * 1.35, TILE * 1.35));
-    const ringMap = this.track(landingRingTexture());
-    const glowMap = this.track(radialTexture("rgba(255,255,255,0.9)", "rgba(255,255,255,0)"));
-
     for (let i = 0; i < 5; i += 1) {
-      const ringMaterial = this.track(
-        new THREE.MeshBasicMaterial({
-          map: ringMap,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.rotation.x = -Math.PI / 2;
-      ring.visible = false;
-      ring.renderOrder = 6;
-      this.group.add(ring);
-
-      const glowMaterial = this.track(
-        new THREE.MeshBasicMaterial({
-          map: glowMap,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-      glow.rotation.x = -Math.PI / 2;
-      glow.visible = false;
-      glow.renderOrder = 5;
-      this.group.add(glow);
-
       this.landings.push({
-        ring,
-        ringMaterial,
-        glow,
-        glowMaterial,
+        ring: new Decal(),
+        glow: new Decal(),
         age: 0,
         duration: 0.7,
         strength: 1,
@@ -949,14 +992,14 @@ export class BoardView {
     ripple.strength = strength;
     ripple.active = true;
     ripple.ring.position.copy(centre);
-    ripple.ring.rotation.z = Math.random() * Math.PI * 2;
+    ripple.ring.spin = Math.random() * Math.PI * 2;
     ripple.ring.scale.setScalar(0.2);
     ripple.ring.visible = true;
-    ripple.ringMaterial.color.setHex(color);
+    ripple.ring.color.setHex(color);
     ripple.glow.position.copy(centre).setY(BOARD_TOP + 0.014);
     ripple.glow.scale.setScalar(0.6);
     ripple.glow.visible = true;
-    ripple.glowMaterial.color.setHex(color);
+    ripple.glow.color.setHex(color);
 
     this.joltTiles(square, strength * 0.42, 1.4);
   }
@@ -975,12 +1018,12 @@ export class BoardView {
     wave.duration = 0.6;
     wave.active = true;
     wave.ring.position.copy(centre);
-    wave.ring.rotation.z = Math.random() * Math.PI;
+    wave.ring.spin = Math.random() * Math.PI;
     wave.ring.visible = true;
-    wave.ringMaterial.color.setHex(color);
+    wave.ring.color.setHex(color);
     wave.flare.position.copy(centre).setY(BOARD_TOP + 0.03);
     wave.flare.visible = true;
-    wave.flareMaterial.color.setHex(0xfff3d2);
+    wave.flare.color.setHex(0xfff3d2);
 
     this.joltTiles(square, strength, 2.2);
   }
@@ -1016,6 +1059,7 @@ export class BoardView {
       if (t >= 1) {
         jolt.tile.position.copy(jolt.home);
         jolt.tile.rotation.set(0, 0, 0);
+        this.syncTile(jolt.tile);
         this.jolts.splice(i, 1);
         continue;
       }
@@ -1028,6 +1072,7 @@ export class BoardView {
         jolt.home.z + Math.cos(jolt.age * 38 + jolt.seed) * decay * jolt.strength * 0.035,
       );
       jolt.tile.rotation.set(swing * 0.05, 0, Math.cos(jolt.age * 30 + jolt.seed) * decay * jolt.strength * 0.05);
+      this.syncTile(jolt.tile);
     }
 
     for (const wave of this.waves) {
@@ -1038,19 +1083,19 @@ export class BoardView {
         wave.active = false;
         wave.ring.visible = false;
         wave.flare.visible = false;
-        wave.ringMaterial.opacity = 0;
-        wave.flareMaterial.opacity = 0;
+        wave.ring.opacity = 0;
+        wave.flare.opacity = 0;
         continue;
       }
       const eased = 1 - Math.pow(1 - t, 2.6);
       wave.ring.scale.setScalar(0.25 + eased * 1.35);
-      wave.ringMaterial.opacity = Math.pow(1 - t, 1.7) * 0.95;
-      wave.ring.rotation.z += delta * 0.6;
+      wave.ring.opacity = Math.pow(1 - t, 1.7) * 0.95;
+      wave.ring.spin += delta * 0.6;
 
       // The flare is a two-frame blowout: peaks instantly, gone in ~0.18s.
       const flareT = Math.min(1, wave.age / 0.18);
       wave.flare.scale.setScalar(0.5 + flareT * 1.1);
-      wave.flareMaterial.opacity = Math.pow(1 - flareT, 2) * 1.1;
+      wave.flare.opacity = Math.pow(1 - flareT, 2) * 1.1;
       wave.flare.visible = flareT < 1;
     }
 
@@ -1062,19 +1107,19 @@ export class BoardView {
         ripple.active = false;
         ripple.ring.visible = false;
         ripple.glow.visible = false;
-        ripple.ringMaterial.opacity = 0;
-        ripple.glowMaterial.opacity = 0;
+        ripple.ring.opacity = 0;
+        ripple.glow.opacity = 0;
         continue;
       }
       // The dust rolls out fast then coasts; the light under it dies quicker.
       const eased = 1 - Math.pow(1 - t, 3);
       ripple.ring.scale.setScalar(0.2 + eased * (0.85 + ripple.strength * 0.5));
-      ripple.ringMaterial.opacity = Math.sin(Math.PI * Math.pow(t, 0.55)) * 0.55 * ripple.strength;
-      ripple.ring.rotation.z += delta * 0.35;
+      ripple.ring.opacity = Math.sin(Math.PI * Math.pow(t, 0.55)) * 0.55 * ripple.strength;
+      ripple.ring.spin += delta * 0.35;
 
       const glowT = Math.min(1, ripple.age / (ripple.duration * 0.45));
       ripple.glow.scale.setScalar(0.6 + glowT * 0.75);
-      ripple.glowMaterial.opacity = Math.pow(1 - glowT, 2.1) * 0.5 * ripple.strength;
+      ripple.glow.opacity = Math.pow(1 - glowT, 2.1) * 0.5 * ripple.strength;
       ripple.glow.visible = glowT < 1;
     }
   }
@@ -1091,14 +1136,10 @@ export class BoardView {
       slot.kind = null;
       slot.pulse = false;
       slot.age = 0;
-      slot.glow.visible = false;
-      slot.marker.visible = false;
-      slot.xray.visible = false;
-      slot.beam.visible = false;
-      slot.glowMaterial.opacity = 0;
-      slot.markerMaterial.opacity = 0;
-      slot.xrayMaterial.opacity = 0;
-      slot.beamMaterial.opacity = 0;
+      for (const decal of [slot.glow, slot.marker, slot.xray, slot.beam]) {
+        decal.visible = false;
+        decal.opacity = 0;
+      }
     }
   }
 
@@ -1115,23 +1156,20 @@ export class BoardView {
     if (restart) slot.age = -delay;
 
     const color = HIGHLIGHT_COLORS[kind];
-    slot.glowMaterial.color.setHex(color);
-    slot.markerMaterial.color.setHex(color);
-    slot.xrayMaterial.color.setHex(color);
-    slot.beamMaterial.color.setHex(color);
+    slot.glow.color.setHex(color);
+    slot.marker.color.setHex(color);
+    slot.xray.color.setHex(color);
+    slot.beam.color.setHex(color);
 
-    const markerMap = this.markerMaps[kind];
-    slot.markerMaterial.map = markerMap;
-    slot.markerMaterial.needsUpdate = true;
-    slot.marker.rotation.z = 0;
-    slot.xrayMaterial.map = markerMap;
-    slot.xrayMaterial.needsUpdate = true;
-    slot.xray.rotation.z = 0;
+    slot.markerStyle = this.markerStyles[kind];
+    slot.marker.spin = 0;
+    slot.xray.spin = 0;
 
     const visible = slot.age >= 0;
+    const hasMarker = slot.markerStyle !== null;
     slot.glow.visible = visible;
-    slot.marker.visible = visible && markerMap !== null;
-    slot.xray.visible = visible && markerMap !== null && XRAY_OPACITY[kind] > 0;
+    slot.marker.visible = visible && hasMarker;
+    slot.xray.visible = visible && hasMarker && XRAY_OPACITY[kind] > 0;
     slot.beam.visible = visible && BEAM_OPACITY[kind] > 0;
   }
 
@@ -1141,7 +1179,7 @@ export class BoardView {
    * square, so it is plainly a control rather than another marker.
    */
   private updatePremoveCancel(delta: number): void {
-    if (!this.premoveCancel.visible || !this.premoveCancelSquare) return;
+    if (!this.coin.visible || !this.premoveCancelSquare) return;
     this.premoveCancelAge = Math.min(this.premoveCancelAge + delta, POP_DURATION);
     const pop = easeOutBack(this.premoveCancelAge / POP_DURATION);
     const target = this.premoveCancelHot ? 1 : 0;
@@ -1149,10 +1187,12 @@ export class BoardView {
     const heat = this.premoveCancelHeat;
     const bob = Math.sin(this.elapsed * 2.2) * 0.03;
     const centre = squareToWorld(this.premoveCancelSquare, BOARD_TOP);
-    this.premoveCancel.position.set(centre.x, BOARD_TOP + CANCEL_LIFT + bob, centre.z);
-    this.premoveCancel.scale.setScalar(CANCEL_SIZE * (0.4 + pop * 0.6) * (1 + heat * 0.16));
-    this.premoveCancelMaterial.opacity = (0.78 + heat * 0.22) * Math.min(1, pop);
-    this.premoveCancelMaterial.color.copy(CANCEL_COLD).lerp(CANCEL_HOT, heat);
+    this.coin.position.set(centre.x, BOARD_TOP + CANCEL_LIFT + bob, centre.z);
+    this.coin.scale.setScalar(CANCEL_SIZE * (0.4 + pop * 0.6) * (1 + heat * 0.16));
+    this.coin.opacity = (0.78 + heat * 0.22) * Math.min(1, pop);
+    this.coin.color.copy(CANCEL_COLD).lerp(CANCEL_HOT, heat);
+    this.premoveCancel.position.copy(this.coin.position);
+    this.premoveCancel.scale.copy(this.coin.scale);
   }
 
   /**
@@ -1161,12 +1201,12 @@ export class BoardView {
    */
   private updatePremoveOrders(delta: number): void {
     for (let index = 0; index < this.premoveOrders.length; index += 1) {
-      const sprite = this.premoveOrders[index];
-      if (!sprite.visible) continue;
+      const order = this.premoveOrders[index];
+      if (!order.visible) continue;
       this.premoveOrderAges[index] = Math.min(this.premoveOrderAges[index] + delta, POP_DURATION);
       const pop = easeOutBack(this.premoveOrderAges[index] / POP_DURATION);
-      sprite.scale.setScalar(ORDER_SIZE * (0.5 + pop * 0.5));
-      this.premoveOrderMaterials[index].opacity = 0.92 * Math.min(1, pop);
+      order.scale.setScalar(ORDER_SIZE * (0.5 + pop * 0.5));
+      order.opacity = 0.92 * Math.min(1, pop);
     }
   }
 
@@ -1178,27 +1218,25 @@ export class BoardView {
   setOverlaysMuted(muted: boolean): void {
     if (this.overlaysMuted === muted) return;
     this.overlaysMuted = muted;
-    this.premoveCancel.visible = !muted && this.premoveCancelSquare !== null;
-    for (let index = 0; index < this.premoveOrders.length; index += 1) {
-      const sprite = this.premoveOrders[index];
-      if (muted) sprite.visible = false;
-      else if (this.premoveOrderMaterials[index].opacity > 0) sprite.visible = true;
+    this.coin.visible = !muted && this.premoveCancelSquare !== null;
+    for (const order of this.premoveOrders) {
+      if (muted) order.visible = false;
+      else if (order.opacity > 0) order.visible = true;
     }
     if (!muted) return;
     for (const slot of this.slots.values()) {
       slot.xray.visible = false;
-      slot.xrayMaterial.opacity = 0;
+      slot.xray.opacity = 0;
     }
   }
 
   setHover(square: SquareId | null): void {
-    const material = this.hoverRing.material as THREE.MeshBasicMaterial;
     if (!square) {
-      material.opacity = 0;
+      this.hoverRing.opacity = 0;
       return;
     }
     this.hoverRing.position.copy(squareToWorld(square, BOARD_TOP + 0.014));
-    material.opacity = 0.5;
+    this.hoverRing.opacity = 0.5;
   }
 
   update(delta: number): void {
@@ -1208,13 +1246,17 @@ export class BoardView {
     if (this.premoveLinks[0].visible) {
       const wave = (Math.sin(this.elapsed * 2.2) + 1) * 0.5;
       const opacity = 0.16 + wave * 0.16;
-      for (let index = 0; index < this.premoveLinks.length; index += 1) {
-        if (!this.premoveLinks[index].visible) continue;
-        this.premoveLinkMaterials[index].opacity = opacity;
+      for (const link of this.premoveLinks) {
+        if (link.visible) link.opacity = opacity;
       }
     }
     this.updatePremoveCancel(delta);
     this.updatePremoveOrders(delta);
+    this.updateHighlights(delta);
+    this.flush();
+  }
+
+  private updateHighlights(delta: number): void {
     for (const slot of this.slots.values()) {
       const kind = slot.kind;
       if (!kind) continue;
@@ -1228,7 +1270,7 @@ export class BoardView {
         continue;
       }
 
-      const hasMarker = this.markerMaps[kind] !== null;
+      const hasMarker = slot.markerStyle !== null;
       const hasXray = hasMarker && XRAY_OPACITY[kind] > 0 && !this.overlaysMuted;
       const hasBeam = BEAM_OPACITY[kind] > 0;
       slot.glow.visible = true;
@@ -1243,29 +1285,68 @@ export class BoardView {
       const breath = slot.pulse ? 0.45 + wave * 0.85 : 0.8 + wave * 0.25;
       const fade = t;
 
-      slot.glowMaterial.opacity = GLOW_OPACITY[kind] * breath * fade;
+      slot.glow.opacity = GLOW_OPACITY[kind] * breath * fade;
       slot.glow.scale.setScalar(0.55 + pop * 0.45);
 
       if (hasMarker) {
-        slot.markerMaterial.opacity = MARKER_OPACITY[kind] * (0.72 + breath * 0.34) * fade;
+        slot.marker.opacity = MARKER_OPACITY[kind] * (0.72 + breath * 0.34) * fade;
         slot.marker.scale.setScalar(0.35 + pop * 0.65 + (slot.pulse ? wave * 0.05 : wave * 0.02));
-        slot.marker.rotation.z += delta * MARKER_SPIN[kind];
+        slot.marker.spin += delta * MARKER_SPIN[kind];
       }
 
       if (hasXray) {
         // Locked to the reticle it shadows, a touch smaller so the two read as
         // one mark rather than a double exposure when nothing is in the way.
-        slot.xrayMaterial.opacity = XRAY_OPACITY[kind] * (0.66 + breath * 0.34) * fade;
+        slot.xray.opacity = XRAY_OPACITY[kind] * (0.66 + breath * 0.34) * fade;
         slot.xray.scale.setScalar(slot.marker.scale.x * 0.9);
-        slot.xray.rotation.z = slot.marker.rotation.z;
+        slot.xray.spin = slot.marker.spin;
       }
 
       if (hasBeam) {
-        slot.beamMaterial.opacity = BEAM_OPACITY[kind] * breath * fade;
+        slot.beam.opacity = BEAM_OPACITY[kind] * breath * fade;
         slot.beam.scale.set(1, 0.4 + pop * 0.6, 1);
         slot.beam.position.y = BOARD_TOP + 0.275 * (0.4 + pop * 0.6);
       }
     }
+  }
+
+  /**
+   * Writes everything lit into the three batches, in the order the old meshes'
+   * render orders put them: inside one draw, instances blend in sequence, so
+   * the veils go down before the glows and the numerals before the coin.
+   */
+  private flush(): void {
+    const { floor, marks, xrays, styles } = this;
+
+    floor.begin();
+    for (const slot of this.shrouds.values()) floor.push(slot.veil, styles.veil);
+    for (const slot of this.slots.values()) floor.push(slot.glow, styles.glow);
+    floor.end();
+
+    marks.begin();
+    for (const slot of this.slots.values()) {
+      marks.push(slot.beam, styles.beam);
+      if (slot.markerStyle) marks.push(slot.marker, slot.markerStyle);
+    }
+    for (const link of this.premoveLinks) marks.push(link, styles.thread);
+    marks.push(this.hoverRing, styles.hover);
+    for (const ripple of this.landings) {
+      marks.push(ripple.glow, styles.landingGlow);
+      marks.push(ripple.ring, styles.landingRing);
+    }
+    for (const wave of this.waves) {
+      marks.push(wave.ring, styles.impactRing);
+      marks.push(wave.flare, styles.flare);
+    }
+    marks.end();
+
+    xrays.begin();
+    for (const slot of this.slots.values()) {
+      if (slot.markerStyle) xrays.push(slot.xray, slot.markerStyle);
+    }
+    this.premoveOrders.forEach((order, index) => xrays.push(order, styles.orders[index]));
+    xrays.push(this.coin, styles.coin);
+    xrays.end();
   }
 
   /**
@@ -1286,6 +1367,7 @@ export class BoardView {
     this.disposables = [];
     this.slots.clear();
     this.shrouds.clear();
+    this.tileInstances.clear();
     this.group.clear();
   }
 }
