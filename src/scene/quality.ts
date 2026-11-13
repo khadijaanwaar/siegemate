@@ -167,14 +167,46 @@ export function detectQualityPreset(): QualityPreset {
     renderer = "";
   }
 
-  const weakGpu = /(swiftshader|llvmpipe|software|mali-4|adreno \(tm\) [345]|intel.*hd graphics [2-4])/.test(renderer);
+  return classifyGpu({ renderer, cores, memory, touch: isTouch });
+}
+
+export interface GpuFacts {
+  /** Lower-cased `UNMASKED_RENDERER_WEBGL`, or "" when the browser hides it. */
+  renderer: string;
+  cores: number;
+  /** GiB; `Infinity` when the browser does not say. */
+  memory: number;
+  touch: boolean;
+}
+
+/**
+ * Integrated laptop graphics and every Adreno (phones and the Quest's own
+ * browser) start on `low`. Measured on an Intel Iris Plus MacBook at 2× Retina:
+ * `high` held 24 fps on the menu, `medium` 21–36 fps in a fight, `low` 44–52 fps.
+ * Core count alone said "high", which is how that laptop ended up stuttering.
+ */
+export function classifyGpu({ renderer, cores, memory, touch }: GpuFacts): QualityPreset {
+  const weakGpu = /(swiftshader|llvmpipe|software|mali-4|adreno|intel.*(iris|uhd graphics|hd graphics))/.test(renderer);
   const strongGpu = /(rtx|radeon rx|apple m[1-9]|geforce gtx 1[06-9]|arc a)/.test(renderer);
 
   if (weakGpu || cores <= 2 || memory <= 2) return "low";
   // A current phone holds `medium` comfortably, and the frame-rate watchdog
   // below steps it back down if this one cannot.
-  if (isTouch) return cores >= 4 && memory >= 3 ? "medium" : "low";
+  if (touch) return cores >= 4 && memory >= 3 ? "medium" : "low";
   if (strongGpu && cores >= 8 && memory >= 8) return "ultra";
   if (cores >= 6 && memory >= 4) return "high";
   return "medium";
+}
+
+/** The frame rate under which the watchdog gives up a preset. */
+export const MIN_COMFORTABLE_FPS = 45;
+
+/**
+ * The watchdog's policy: one level down whenever the measured average is under
+ * {@link MIN_COMFORTABLE_FPS}, repeatedly, until `low`. `null` means stay.
+ */
+export function nextPresetForFps(current: QualityPreset, averageFps: number): QualityPreset | null {
+  if (averageFps >= MIN_COMFORTABLE_FPS) return null;
+  const index = QUALITY_ORDER.indexOf(current);
+  return index > 0 ? QUALITY_ORDER[index - 1] : null;
 }

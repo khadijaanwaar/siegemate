@@ -26,7 +26,7 @@ import {
 } from "./pieces";
 import { PLAQUE_ASPECT, promotionPlaqueTexture } from "./rankBadges";
 import { PostFX } from "./postfx";
-import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
+import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./quality";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -141,6 +141,8 @@ const TACTICAL_SHOT: CameraShot = {
 };
 const TACTICAL_FOV = 28;
 const DEFAULT_FOV = 46;
+/** Seconds the frame-rate watchdog lets a new preset run before judging it. */
+const AUTO_ADJUST_SETTLE_S = 6;
 
 /**
  * The four corners of a square, walked around its perimeter as `(x, z)` steps of
@@ -1078,7 +1080,8 @@ export class SceneEngine {
   private limits: OrbitLimits = orbitLimits(AUTHORED_VIEW, 10.5);
 
   private fpsSamples: number[] = [];
-  private autoAdjusted = false;
+  /** When the watchdog last changed the preset; it waits a settle window before judging again. */
+  private lastAutoAdjustAt = Number.NEGATIVE_INFINITY;
   private lastFpsReport = 0;
 
   constructor(
@@ -1461,17 +1464,15 @@ export class SceneEngine {
     const average = this.fpsSamples.reduce((sum, value) => sum + value, 0) / this.fpsSamples.length;
     this.callbacks.onFps(Math.round(average));
 
-    // One automatic step down if the detected preset is clearly too heavy.
-    if (this.autoAdjusted || this.elapsed < 8 || this.fpsSamples.length < 100) return;
-    if (average >= 40) return;
-    const order: QualityPreset[] = ["low", "medium", "high", "ultra"];
-    const index = order.indexOf(this.preset);
-    if (index <= 0) {
-      this.autoAdjusted = true;
-      return;
-    }
-    this.autoAdjusted = true;
-    const next = order[index - 1];
+    // Step down as many times as it takes, one level per settle window, so a
+    // preset that was guessed too high cannot leave the hall stuttering.
+    if (this.elapsed < 8 || this.elapsed - this.lastAutoAdjustAt < AUTO_ADJUST_SETTLE_S) return;
+    if (this.fpsSamples.length < 100) return;
+    const next = nextPresetForFps(this.preset, average);
+    if (!next) return;
+    this.lastAutoAdjustAt = this.elapsed;
+    // The samples belong to the old preset: judge the new one on its own frames.
+    this.fpsSamples.length = 0;
     this.setQuality(next);
     this.callbacks.onQualityAdjusted(next);
   }
