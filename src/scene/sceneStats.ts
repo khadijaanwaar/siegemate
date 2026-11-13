@@ -29,8 +29,13 @@ function isDrawable(object: THREE.Object3D): object is THREE.Mesh | THREE.Points
   return Boolean(candidate.isMesh || candidate.isPoints || candidate.isLine || candidate.isSprite);
 }
 
+/**
+ * Materials the renderer will actually draw with. A `visible: false` material
+ * (the figures' pick boxes) is skipped by three.js before it ever becomes a call.
+ */
 function materialCount(object: THREE.Mesh | THREE.Points | THREE.Line): number {
-  return Array.isArray(object.material) ? object.material.length : 1;
+  const materials = Array.isArray(object.material) ? object.material : [object.material];
+  return materials.filter((material) => material?.visible !== false).length;
 }
 
 /** Visible drawables under `root`, one row each — for finding what a frame is made of. */
@@ -38,10 +43,12 @@ export function listDrawables(root: THREE.Object3D): DrawableInfo[] {
   const rows: DrawableInfo[] = [];
   root.traverseVisible((object) => {
     if (!isDrawable(object)) return;
+    const materials = materialCount(object);
+    if (materials === 0) return;
     rows.push({
       name: object.name || object.parent?.name || "(unnamed)",
       type: object.type,
-      materials: materialCount(object),
+      materials,
       triangles: Math.round(trianglesOf(object)),
       skinned: Boolean((object as THREE.SkinnedMesh).isSkinnedMesh),
       instances: (object as THREE.InstancedMesh).isInstancedMesh ? (object as THREE.InstancedMesh).count : 1,
