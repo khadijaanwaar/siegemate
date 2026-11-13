@@ -23,6 +23,7 @@ function fakeEngine(overrides: Partial<OrderTarget> = {}): OrderTarget & { calls
       calls.push("cancel");
     }),
     pickWithRay: vi.fn(() => ({ square: "d4" })),
+    canOrder: vi.fn((square: string) => square === "e2"),
     tapSquare: vi.fn((square: string | null) => {
       calls.push(`tap:${square}`);
     }),
@@ -111,6 +112,65 @@ describe("HandOrders", () => {
     const orders = new HandOrders(engine);
     orders.update("start", near, ray);
     expect(orders.mode).toBe("aiming");
+  });
+
+  describe("by ray (a controller, or a hand pointing from afar)", () => {
+    const far = new THREE.Vector3(0.3, 1, -0.1);
+    const pointing = (...squares: (string | null)[]) => {
+      const pick = vi.fn(() => ({ square: squares[squares.length - 1] ?? null }));
+      for (const square of squares) pick.mockReturnValueOnce({ square });
+      return pick;
+    };
+
+    it("pressed on one of your figures takes the order; let go over another square plays it", () => {
+      const engine = fakeEngine({ pickWithRay: pointing("e2", "e4") });
+      const orders = new HandOrders(engine);
+      orders.update("start", far, ray);
+      expect(orders.mode).toBe("ordering");
+      expect(orders.byRay).toBe(true);
+      orders.update("hold", far, ray);
+      expect(orders.aimSquare).toBe("e4");
+      orders.update("end", far, ray);
+      expect(engine.calls).toEqual(["near:0.03", "begin:e2", "release:e4"]);
+    });
+
+    it("let go over its own square, the figure stays selected for a second click", () => {
+      const engine = fakeEngine({ pickWithRay: pointing("e2", "e2") });
+      const orders = new HandOrders(engine);
+      orders.update("start", far, ray);
+      orders.update("end", far, ray);
+      expect(engine.calls).toContain("release:e2");
+      expect(engine.calls.some((call) => call.startsWith("tap"))).toBe(false);
+    });
+
+    it("never begins an order on a figure that is not yours (a capture plays on release, not on press)", () => {
+      const engine = fakeEngine({ pickWithRay: pointing("d7", "d7") });
+      const orders = new HandOrders(engine);
+      orders.update("start", far, ray);
+      expect(orders.mode).toBe("aiming");
+      expect(engine.calls.some((call) => call.startsWith("begin"))).toBe(false);
+      orders.update("end", far, ray);
+      expect(engine.calls).toContain("tap:d7");
+    });
+
+    it("dragged off the board, stands down", () => {
+      const engine = fakeEngine({ pickWithRay: pointing("e2", null) });
+      const orders = new HandOrders(engine);
+      orders.update("start", far, ray);
+      orders.update("hold", far, ray);
+      orders.update("end", far, ray);
+      expect(engine.calls).toContain("release:null");
+    });
+
+    it("keeps its aim through a moment without a ray", () => {
+      const engine = fakeEngine({ pickWithRay: pointing("e2", "e4") });
+      const orders = new HandOrders(engine);
+      orders.update("start", far, ray);
+      orders.update("hold", far, ray);
+      orders.update("hold", far, null);
+      orders.update("end", far, null);
+      expect(engine.calls).toContain("release:e4");
+    });
   });
 
   it("ignores a pinch with no ray and no figure in reach", () => {

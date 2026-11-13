@@ -1346,6 +1346,13 @@ export class SceneEngine {
   /** XR: the square and figure a hand or controller ray (world space) points at. */
   pickWithRay(ray: THREE.Ray): { square: SquareId | null; piece: PieceView | null } {
     this.raycaster.ray.copy(ray);
+    // As with the mouse (see reachUnderPointer): a lit square under the ray
+    // wins over a body standing in front of it. A hand or controller held
+    // low over the table sees most destinations behind a row of figures.
+    if (this.selected !== null && this.legalTargets.size > 0) {
+      const square = this.squareUnderRay();
+      if (square && this.legalTargets.has(square)) return { square, piece: this.pieces.get(square) ?? null };
+    }
     return this.rayPick();
   }
 
@@ -1410,6 +1417,14 @@ export class SceneEngine {
       }
     }
     return best;
+  }
+
+  /** XR: `square` holds a figure the player commands (the side to move, or theirs while the machine thinks). */
+  canOrder(square: SquareId): boolean {
+    const snapshot = this.controller.getSnapshot();
+    if (snapshot.status !== "playing") return false;
+    const side = this.controller.isHumanTurn() ? snapshot.turn : snapshot.playerColor;
+    return this.pieces.get(square)?.color === side;
   }
 
   /** XR: a pinch closed on the figure on `square`. True when it is now the one being ordered. */

@@ -536,6 +536,8 @@ export function GameShell() {
         startMatch({ mode: "ai", difficulty, playerColor: "w", clockMinutes: null }),
       move: (from: string, to: string) => controller.tryMove(from, to),
       pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
+      pointer: (hand: XRHandedness) => mixedRef.current?.debugPointer(hand) ?? null,
+      buttonWorld: (id: string) => mixedRef.current?.debugButtonWorld(id) ?? null,
       boardSize: () => mixedRef.current?.boardSize ?? null,
       ui: () => mixedRef.current?.debugUi() ?? null,
       press: (id: string) => mixedRef.current?.debugPress(id) ?? false,

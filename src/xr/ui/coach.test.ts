@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Coach, TWO_HANDS_HINT_S, type CoachInput } from "./coach";
+import { Coach, coachCopy, TWO_HANDS_HINT_S, type CoachInput } from "./coach";
 
 const base: CoachInput = { mr: "placing", placement: "searching", playerMoved: false, onboarded: false, now: 0 };
 
@@ -38,5 +38,25 @@ describe("Coach", () => {
 
   it("says nothing outside mixed reality", () => {
     expect(new Coach().step({ ...base, mr: "off" })).toBe("none");
+  });
+});
+
+describe("coachCopy", () => {
+  const steps = ["find-table", "place", "first-move", "two-hands"] as const;
+
+  it("speaks of pinches to hands and of the trigger and grips to controllers", () => {
+    expect(coachCopy("place", "hands")).toMatch(/pinch/i);
+    expect(coachCopy("place", "controllers")).toMatch(/trigger/i);
+    expect(coachCopy("two-hands", "controllers")).toMatch(/grip/i);
+    for (const step of steps) {
+      expect(coachCopy(step, "controllers")).not.toMatch(/pinch/i);
+      expect(coachCopy(step, "hands")).not.toMatch(/trigger|grip/i);
+    }
+  });
+
+  it("stays a glance long (a few words)", () => {
+    for (const step of steps) {
+      for (const pointer of ["hands", "controllers"] as const) expect(coachCopy(step, pointer).split(/\s+/).length).toBeLessThanOrEqual(7);
+    }
   });
 });

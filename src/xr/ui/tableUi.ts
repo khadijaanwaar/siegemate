@@ -5,7 +5,7 @@ import { loadStats, winRate } from "../../core/stats";
 import type { Difficulty, Faction, GameSnapshot } from "../../core/types";
 import type { TableRig } from "../tableRig";
 import { CanvasPanel, type PanelButton } from "./canvasPanel";
-import { Coach, type CoachInput, type CoachStep } from "./coach";
+import { Coach, coachCopy, type CoachInput, type CoachStep, type Pointer } from "./coach";
 import { UI } from "./palette";
 import { PokeTracker } from "./poke";
 
@@ -72,6 +72,7 @@ export class TableUi {
     ["right", new PokeTracker()],
   ]);
   private coachStep: CoachStep = "none";
+  private pointer: Pointer = "hands";
   private menuOpen = false;
   private resultShown = false;
   private pendingResult = false;
@@ -124,7 +125,7 @@ export class TableUi {
   /** Called every headset frame. `headYaw` is where the player faces (0 = -Z). */
   update(
     now: number,
-    input: Omit<CoachInput, "onboarded" | "playerMoved" | "now">,
+    input: Omit<CoachInput, "onboarded" | "playerMoved" | "now"> & { pointer?: Pointer },
     head: THREE.Vector3,
     headYaw: number,
     rig: TableRig,
@@ -136,7 +137,8 @@ export class TableUi {
       this.onboarded = true;
       writeFlag(ONBOARDED_KEY);
     }
-    if (step !== this.coachStep) this.showCoach(step);
+    const pointer = input.pointer ?? "hands";
+    if (step !== this.coachStep || pointer !== this.pointer) this.showCoach(step, pointer);
 
     const playing = input.mr === "playing";
     if (this.menuOpen && this.actions.arenaLabel() !== this.menuArena) this.showMenu();
@@ -239,9 +241,21 @@ export class TableUi {
   }
 
   /** Tests and diagnostics: what is on show. */
-  describe(): { coach: CoachStep; panels: PanelName[] } {
+  describe(): { coach: CoachStep; panels: PanelName[]; pointer: Pointer } {
     const panels = (Object.keys(this.panels) as PanelName[]).filter((name) => this.panels[name].visible);
-    return { coach: this.coachStep, panels };
+    return { coach: this.coachStep, panels, pointer: this.pointer };
+  }
+
+  /** Tests: the world-space centre of a visible button, or null. */
+  buttonWorld(id: string): THREE.Vector3 | null {
+    for (const panel of this.interactive()) {
+      const button = this.buttonsOf(panel).find((candidate) => candidate.id === id);
+      if (!button) continue;
+      const [x, y, width, height] = button.rect;
+      panel.mesh.updateWorldMatrix(true, false);
+      return panel.mesh.localToWorld(new THREE.Vector3(x + width / 2 - panel.width / 2, panel.height / 2 - (y + height / 2), 0));
+    }
+    return null;
   }
 
   /** Look-dev: every visible panel as a PNG data URL. */
@@ -333,17 +347,12 @@ export class TableUi {
     }
   }
 
-  private showCoach(step: CoachStep): void {
+  private showCoach(step: CoachStep, pointer: Pointer): void {
     this.coachStep = step;
+    this.pointer = pointer;
     const panel = this.panels.coach;
     panel.visible = step !== "none";
     if (step === "none") return;
-    const copy: Record<Exclude<CoachStep, "none">, string> = {
-      "find-table": "Look at your table",
-      place: "Pinch to place",
-      "first-move": "Pinch a soldier, drop on a glow",
-      "two-hands": "Two hands: move · resize",
-    };
     const lesson = step === "first-move" || step === "two-hands";
     const buttons: PanelButton[] = lesson
       ? [{ id: "skip", rect: [panel.width - 0.064, panel.height / 2 - 0.017, 0.052, 0.034], label: "Skip" }]
@@ -351,9 +360,9 @@ export class TableUi {
     this.setPanel(
       panel,
       {
-        lines: [{ text: copy[step], size: 0.016, y: panel.height / 2, align: "left" }],
+        lines: [{ text: coachCopy(step, pointer), size: 0.016, y: panel.height / 2, align: "left" }],
         buttons,
-        draw: (ctx, time) => drawGesture(ctx, step, time, panel.width - (lesson ? 0.095 : 0.045), panel.height / 2),
+        draw: (ctx, time) => drawGesture(ctx, step, pointer, time, panel.width - (lesson ? 0.095 : 0.045), panel.height / 2),
       },
       true,
     );
@@ -471,10 +480,11 @@ function statusText(snapshot: GameSnapshot): { text: string; color: string } {
 }
 
 /**
- * The gesture glyph beside a hint: a thumb and finger closing (pinch), a
- * looking eye, or two hands spreading. Drawn with lines; show, don't tell.
+ * The gesture glyph beside a hint: a thumb and finger closing (pinch) or a
+ * controller's trigger pulling, a looking eye, or two hands (or two
+ * controllers) spreading. Drawn with lines; show, don't tell.
  */
-function drawGesture(ctx: CanvasRenderingContext2D, step: CoachStep, time: number, x: number, y: number): void {
+function drawGesture(ctx: CanvasRenderingContext2D, step: CoachStep, pointer: Pointer, time: number, x: number, y: number): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.strokeStyle = UI.gold;
@@ -491,15 +501,55 @@ function drawGesture(ctx: CanvasRenderingContext2D, step: CoachStep, time: numbe
     ctx.fill();
   } else if (step === "two-hands") {
     const spread = 0.008 + cycle * 0.006;
-    for (const side of [-1, 1]) drawPinch(ctx, side * spread, 0, 0.6, side);
+    for (const side of [-1, 1]) {
+      if (pointer === "controllers") drawController(ctx, side * spread, 0, 1, side, "grip");
+      else drawPinch(ctx, side * spread, 0, 0.6, side);
+    }
     ctx.beginPath();
     ctx.moveTo(-spread + 0.004, 0.012);
     ctx.lineTo(spread - 0.004, 0.012);
     ctx.stroke();
+  } else if (pointer === "controllers") {
+    drawController(ctx, 0, 0, cycle, 1, "trigger");
   } else {
     drawPinch(ctx, 0, 0, cycle, 1);
   }
   ctx.restore();
+}
+
+/**
+ * A Touch controller in profile: the tracking ring on top, the handle below,
+ * and the button the hint is about (trigger in front, grip behind) lit as
+ * it is pressed.
+ */
+function drawController(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  pressed: number,
+  side: number,
+  button: "trigger" | "grip",
+): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y - 0.009, 0.007, 0.005, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 0.0035 * side, y - 0.005);
+  ctx.quadraticCurveTo(x - 0.004 * side, y + 0.008, x - 0.001 * side, y + 0.016);
+  ctx.moveTo(x + 0.0035 * side, y - 0.005);
+  ctx.quadraticCurveTo(x + 0.0045 * side, y + 0.008, x + 0.002 * side, y + 0.016);
+  ctx.stroke();
+  // The button: a short stroke that sinks into the body as it is pressed.
+  const front = button === "trigger" ? 1 : -1;
+  const travel = 0.0025 * (1 - pressed);
+  ctx.beginPath();
+  ctx.moveTo(x + front * (0.0045 + travel) * side, y - 0.001);
+  ctx.lineTo(x + front * (0.0045 + travel) * side, y + 0.004);
+  ctx.globalAlpha = 0.4 + 0.6 * pressed;
+  ctx.lineWidth = 0.003;
+  ctx.stroke();
+  ctx.lineWidth = 0.0022;
+  ctx.globalAlpha = 1;
 }
 
 function drawPinch(ctx: CanvasRenderingContext2D, x: number, y: number, closed: number, side: number): void {

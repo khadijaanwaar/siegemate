@@ -1,6 +1,28 @@
 import type { PlacementState } from "../placement";
 
 export type CoachStep = "find-table" | "place" | "first-move" | "two-hands" | "none";
+/** What the player is holding up: their hands, or Touch controllers. */
+export type Pointer = "hands" | "controllers";
+
+const COPY: Record<Pointer, Record<Exclude<CoachStep, "none">, string>> = {
+  hands: {
+    "find-table": "Look at your table",
+    place: "Pinch to place",
+    "first-move": "Pinch a soldier, drop on a glow",
+    "two-hands": "Two hands: move · resize",
+  },
+  controllers: {
+    "find-table": "Look at your table",
+    place: "Trigger to place",
+    "first-move": "Trigger a soldier, then a glow",
+    "two-hands": "Both grips: move · resize",
+  },
+};
+
+/** The hint's words, in the language of whatever the player is holding. */
+export function coachCopy(step: Exclude<CoachStep, "none">, pointer: Pointer): string {
+  return COPY[pointer][step];
+}
 
 export interface CoachInput {
   mr: "off" | "starting" | "placing" | "playing";
