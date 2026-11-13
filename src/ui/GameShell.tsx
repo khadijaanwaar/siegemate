@@ -522,6 +522,10 @@ export function GameShell() {
       state: () => mixedRef.current?.current ?? "off",
       placement: () => mixedRef.current?.placementState ?? "searching",
       snapshot: () => controller.getSnapshot(),
+      /** Tests: start a game against the computer (no headset) and play a move by squares. */
+      startVsComputer: (difficulty: "easy" | "medium" | "hard" = "easy") =>
+        startMatch({ mode: "ai", difficulty, playerColor: "w", clockMinutes: null }),
+      move: (from: string, to: string) => controller.tryMove(from, to),
       pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
       boardSize: () => mixedRef.current?.boardSize ?? null,
       ui: () => mixedRef.current?.debugUi() ?? null,
