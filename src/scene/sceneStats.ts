@@ -13,7 +13,7 @@ export interface SceneBreakdown {
   /** Draw calls of the last rendered frame, as three.js counted them. */
   calls: number;
   triangles: number;
-  /** Visible drawables (one per material) under each direct child of the scene, by name. */
+  /** Visible drawables (one per material) per top-level group, by name (inside `game_world` too). */
   perGroup: Record<string, number>;
 }
 
@@ -52,7 +52,9 @@ export function listDrawables(root: THREE.Object3D): DrawableInfo[] {
 
 export function sceneBreakdown(scene: THREE.Scene, renderer: THREE.WebGLRenderer): SceneBreakdown {
   const perGroup: Record<string, number> = {};
-  for (const child of scene.children) {
+  // The game's own group is a container: report what is inside it by name.
+  const groups = scene.children.flatMap((child) => (child.name === "game_world" ? child.children : [child]));
+  for (const child of groups) {
     const name = child.name || child.type;
     const drawables = listDrawables(child).reduce((sum, row) => sum + row.materials, 0);
     perGroup[name] = (perGroup[name] ?? 0) + drawables;

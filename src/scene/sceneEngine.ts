@@ -18,6 +18,7 @@ import { CheckAlarm } from "./alarm";
 import { EffectsSystem, ShakeSystem } from "./effects";
 import {
   FACTION_ACCENT,
+  PIECE_HEIGHT,
   PieceFactory,
   PieceView,
   type ClipName,
@@ -29,6 +30,7 @@ import { PostFX } from "./postfx";
 import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./quality";
 import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
+import type { TableRig } from "../xr/tableRig";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -143,6 +145,10 @@ const TACTICAL_SHOT: CameraShot = {
 };
 const TACTICAL_FOV = 28;
 const DEFAULT_FOV = 46;
+/** How far above the stone (game units, ~a figure's height) a held order still aims at a square. */
+const ORDER_REACH_UNITS = 3.2;
+/** On a table every idle figure updates every other frame (72 Hz -> 36 Hz breathing). */
+const TABLE_IDLE_EVERY = 2;
 /** Seconds the frame-rate watchdog lets a new preset run before judging it. */
 const AUTO_ADJUST_SETTLE_S = 6;
 
@@ -985,7 +991,20 @@ export class SceneEngine {
 
   private lastFrameTime = 0;
   private elapsed = 0;
-  private frameId = 0;
+  /** Called first in every headset frame (hands, hit-test); set by the XR layer. */
+  private xrFrameHandler: ((time: number, frame: XRFrame) => void) | null = null;
+  /** The real table the game stands on, or null in the 2D hall. */
+  private table: TableRig | null = null;
+  private tableLight: THREE.HemisphereLight | null = null;
+  /** What table mode changed, to put the hall back exactly. */
+  private tableRestore: {
+    background: THREE.Scene["background"];
+    fog: THREE.Scene["fog"];
+    shadows: boolean;
+    clearAlpha: number;
+    autoRotate: boolean;
+    scenery: (readonly [THREE.Object3D, boolean])[];
+  } | null = null;
   private running = false;
   private disposed = false;
   private frameErrors = 0;
@@ -1084,6 +1103,13 @@ export class SceneEngine {
   private fpsSamples: number[] = [];
   /** When the watchdog last changed the preset; it waits a settle window before judging again. */
   private lastAutoAdjustAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Everything that belongs to the game rather than the place: the board, the
+   * figures, their effects. In the 2D hall it sits at the origin unscaled; on a
+   * real table it is re-parented under the table rig. Positions in the engine
+   * are always in this group's space ("game space").
+   */
+  private readonly world = new THREE.Group();
   /** Idle figures update in turns; see `IdleScheduler`. */
   private readonly idle = new IdleScheduler(1);
   private lastFpsReport = 0;
@@ -1144,14 +1170,16 @@ export class SceneEngine {
     this.scene.add(this.dressing.group);
     this.landmarks = new Landmarks(preset, look);
     this.scene.add(this.landmarks.group);
-    this.scene.add(this.board.group);
+    this.world.name = "game_world";
+    this.scene.add(this.world);
+    this.world.add(this.board.group);
     this.board.applyArena(look);
-    this.scene.add(this.effects.group);
-    this.scene.add(this.alarm.group);
+    this.world.add(this.effects.group);
+    this.world.add(this.alarm.group);
     // Three slots: the gathering fire, the killing bolt and a judgement column
     // can all be alight at once. Anything beyond that goes unlit rather than
     // growing the set. Presets without post-processing stay entirely unlit.
-    this.spellLights = new SpellLightPool(this.scene, settings.postFx ? 3 : 0);
+    this.spellLights = new SpellLightPool(this.world, settings.postFx ? 3 : 0);
 
     // A soft lamp parented to the camera: whichever way the board is turned,
     // the faces and shields pointing at the player are never in shadow.
@@ -1186,6 +1214,195 @@ export class SceneEngine {
     );
     this.handleResize();
     if (import.meta.env.DEV || import.meta.env.MODE === "test") this.exposeStats();
+  }
+
+  // --------------------------------------------------------------- table mode
+
+  /** True while the game stands on a real table (mixed reality). */
+  get isTable(): boolean {
+    return this.table !== null;
+  }
+
+  /** The renderer, for the XR layer to start a session on. */
+  get xrRenderer(): THREE.WebGLRenderer {
+    return this.renderer;
+  }
+
+  /** The scene, for the XR layer's own objects (reticle, panels, room styling). */
+  get xrScene(): THREE.Scene {
+    return this.scene;
+  }
+
+  /** Runs first in every headset frame, before the engine's own frame. */
+  setXrFrameHandler(handler: ((time: number, frame: XRFrame) => void) | null): void {
+    this.xrFrameHandler = handler;
+  }
+
+  /**
+   * Moves the game onto a real table: the board, the figures and their effects
+   * go under the rig (scaled to table size), the hall and its scenery are put
+   * away because the player's own room replaces them, and the frame is drawn
+   * straight to the headset with no fog, shadows or post-processing. Camera
+   * moves stop, since the player's head is the camera.
+   */
+  enterTable(rig: TableRig): void {
+    if (this.table) return;
+    this.clearSelection();
+    const scenery = [this.hall.group, this.battlefield.group, this.jungle.group, this.dressing.group, this.landmarks.group];
+    this.tableRestore = {
+      background: this.scene.background,
+      fog: this.scene.fog,
+      shadows: this.renderer.shadowMap.enabled,
+      clearAlpha: this.renderer.getClearAlpha(),
+      autoRotate: this.controls.autoRotate,
+      scenery: scenery.map((group) => [group, group.visible] as const),
+    };
+    this.table = rig;
+    this.controls.enabled = false;
+    this.controls.autoRotate = false;
+    for (const group of scenery) group.visible = false;
+    this.scene.background = null;
+    this.scene.fog = null;
+    // Passthrough shows wherever nothing is drawn.
+    this.renderer.setClearAlpha(0);
+    this.renderer.shadowMap.enabled = false;
+
+    // The hall's torches and sky stay behind with it: a soft room light from
+    // above keeps the figures readable, the camera lamp still fills their faces.
+    this.tableLight = new THREE.HemisphereLight(0xfff1dc, 0x2e241c, 1.6);
+    rig.root.add(this.tableLight);
+
+    rig.content.add(this.world);
+    this.scene.add(rig.root);
+    this.idle.setBuckets(TABLE_IDLE_EVERY);
+    this.refreshMaterials();
+  }
+
+  /** Back to the 2D hall exactly as it was. */
+  exitTable(): void {
+    const rig = this.table;
+    const restore = this.tableRestore;
+    if (!rig || !restore) return;
+    this.table = null;
+    this.tableRestore = null;
+    this.clearSelection();
+    this.scene.add(this.world);
+    rig.root.removeFromParent();
+    if (this.tableLight) {
+      this.tableLight.removeFromParent();
+      this.tableLight.dispose();
+      this.tableLight = null;
+    }
+    for (const [group, visible] of restore.scenery) group.visible = visible;
+    this.scene.background = restore.background;
+    this.scene.fog = restore.fog;
+    this.renderer.setClearAlpha(restore.clearAlpha);
+    this.renderer.shadowMap.enabled = restore.shadows;
+    this.controls.enabled = true;
+    this.controls.autoRotate = restore.autoRotate;
+    this.idle.setBuckets(QUALITY_SETTINGS[this.preset].idleUpdateEvery);
+    this.refreshMaterials();
+    this.handleResize();
+  }
+
+  /** XR: the square and figure a hand or controller ray (world space) points at. */
+  pickWithRay(ray: THREE.Ray): { square: SquareId | null; piece: PieceView | null } {
+    this.raycaster.ray.copy(ray);
+    return this.rayPick();
+  }
+
+  /** XR: a ray pinch or trigger released over `square` (null: off the board). Same rules as a click. */
+  tapSquare(square: SquareId | null): void {
+    if (!this.interactive) return;
+    this.handleSquareTap(square, square ? (this.pieces.get(square) ?? null) : null);
+  }
+
+  /**
+   * XR: the square under a world-space point held over the board: the hand
+   * has to be within reach of the stone (below a figure's height above it).
+   */
+  squareAtWorld(point: THREE.Vector3): SquareId | null {
+    const game = this.toGame(point.clone());
+    if (game.y < BOARD_TOP - 0.6 || game.y > BOARD_TOP + ORDER_REACH_UNITS) return null;
+    return worldToSquare(game.x, game.z);
+  }
+
+  /** XR: the centre of a square's top face, in world space. */
+  squareCenterWorld(square: SquareId, out: THREE.Vector3): THREE.Vector3 {
+    this.world.updateWorldMatrix(true, false);
+    return this.world.localToWorld(out.copy(squareToWorld(square, BOARD_TOP)));
+  }
+
+  /** XR: is `square` one of the lit destinations of the figure being ordered? */
+  isLegalTarget(square: SquareId): boolean {
+    return this.legalTargets.has(square);
+  }
+
+  /** XR: the figure being ordered, if any. */
+  get orderedSquare(): SquareId | null {
+    return this.selected;
+  }
+
+  /**
+   * XR: the nearest figure of the side the player commands whose body (a
+   * line from its feet to its crown) passes within `radiusMeters` of `point`.
+   */
+  figureNear(point: THREE.Vector3, radiusMeters: number): SquareId | null {
+    const snapshot = this.controller.getSnapshot();
+    if (snapshot.status !== "playing") return null;
+    const side = this.controller.isHumanTurn() ? snapshot.turn : snapshot.playerColor;
+    const game = this.toGame(point.clone());
+    const scale = this.world.getWorldScale(new THREE.Vector3()).x;
+    const radius = radiusMeters / Math.max(scale, 1e-6);
+    const feet = new THREE.Vector3();
+    const crown = new THREE.Vector3();
+    const segment = new THREE.Line3(feet, crown);
+    const nearest = new THREE.Vector3();
+    let best: SquareId | null = null;
+    let bestDistance = radius;
+    for (const [square, piece] of this.pieces) {
+      if (piece.color !== side) continue;
+      feet.copy(piece.container.position);
+      crown.copy(feet).setY(feet.y + PIECE_HEIGHT[piece.kind]);
+      segment.closestPointToPoint(game, true, nearest);
+      const distance = nearest.distanceTo(game);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = square;
+      }
+    }
+    return best;
+  }
+
+  /** XR: a pinch closed on the figure on `square`. True when it is now the one being ordered. */
+  beginOrder(square: SquareId): boolean {
+    if (!this.interactive) return false;
+    if (this.selected !== square) this.handleSquareTap(square, this.pieces.get(square) ?? null);
+    return this.selected === square;
+  }
+
+  /**
+   * XR: the pinch opened over `square`. A lit square plays the move (the
+   * figure marches there), another of your figures takes the order, its own
+   * square keeps it selected (so a ray can finish the move), and off the board
+   * (null) stands down.
+   */
+  releaseOrder(square: SquareId | null): void {
+    if (!this.interactive) return;
+    if (square !== null && square === this.selected) return;
+    this.handleSquareTap(square, square ? (this.pieces.get(square) ?? null) : null);
+  }
+
+  /** XR: the hand was lost mid-order. Nothing is played; the board goes back to rest. */
+  cancelOrder(): void {
+    this.clearSelection();
+  }
+
+  /** A world-space point (from a bone or prop) in game space. Null passes through. */
+  private toGame<T extends THREE.Vector3 | null>(point: T): T {
+    if (point === null) return point;
+    this.world.updateWorldMatrix(true, false);
+    return this.world.worldToLocal(point) as T;
   }
 
   /** Dev/test builds only: `window.__scene` for the perf specs and the probe. */
@@ -1239,10 +1456,12 @@ export class SceneEngine {
     if (this.running) return;
     this.running = true;
     this.lastFrameTime = performance.now();
-    const loop = (): void => {
+    // three drives this from the window's clock in 2D and from the headset's
+    // while an XR session is presenting, so one loop serves both.
+    this.renderer.setAnimationLoop((time: number, xrFrame?: XRFrame) => {
       if (!this.running) return;
-      this.frameId = requestAnimationFrame(loop);
       try {
+        if (xrFrame && this.xrFrameHandler) this.xrFrameHandler(time, xrFrame);
         this.frame();
       } catch (error) {
         this.frameErrors += 1;
@@ -1250,8 +1469,7 @@ export class SceneEngine {
         // A misbehaving effect must never take the whole hall down with it.
         if (this.frameErrors === 3) this.postfx.forceDirect("repeated frame errors");
       }
-    };
-    this.frameId = requestAnimationFrame(loop);
+    });
   }
 
   private frame(): void {
@@ -1261,10 +1479,12 @@ export class SceneEngine {
     this.elapsed += delta;
 
     this.tweens.update(delta);
-    this.hall.update(delta);
-    this.battlefield.update(delta, this.camera);
-    this.jungle.update(delta, this.camera);
-    this.dressing.update(delta, this.camera);
+    if (!this.table) {
+      this.hall.update(delta);
+      this.battlefield.update(delta, this.camera);
+      this.jungle.update(delta, this.camera);
+      this.dressing.update(delta, this.camera);
+    }
     this.board.update(delta);
     this.effects.update(delta);
     this.alarm.update(delta);
@@ -1288,6 +1508,13 @@ export class SceneEngine {
     if (this.promotionGroup) this.layoutPromotionPicker(delta);
 
     if (this.tactical) this.alignTokens();
+
+    if (this.table) {
+      // The headset owns the camera, and post-processing would switch off
+      // fixed foveation: draw straight to the XR framebuffer.
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
 
     // Auto orbit for the attract loop, and for a showcase only when the viewer
     // has actually asked for one. Never fight the hand on the mouse: a drag
@@ -1327,6 +1554,7 @@ export class SceneEngine {
    * order of how much it costs to lose.
    */
   private guardAgainstBlackFrames(): void {
+    if (this.table) return;
     if (this.darkFrameChecks >= DARK_FRAME_CHECKS.length) return;
     if (this.elapsed < DARK_FRAME_CHECKS[this.darkFrameChecks]) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -1485,7 +1713,7 @@ export class SceneEngine {
   }
 
   private sampleFps(delta: number): void {
-    if (delta <= 0) return;
+    if (delta <= 0 || this.table) return;
     this.fpsSamples.push(1 / delta);
     if (this.fpsSamples.length > 120) this.fpsSamples.shift();
     if (this.elapsed - this.lastFpsReport < 1) return;
@@ -1538,7 +1766,7 @@ export class SceneEngine {
       });
       if (this.tactical) view.setFlat(true);
       view.container.position.copy(squareToWorld(entry.square));
-      this.scene.add(view.container);
+      this.world.add(view.container);
       this.pieces.set(entry.square, view);
     }
   }
@@ -1692,7 +1920,7 @@ export class SceneEngine {
       if (this.tactical) view.setFlat(true);
       view.container.position.copy(to);
       view.container.scale.setScalar(0.01);
-      this.scene.add(view.container);
+      this.world.add(view.container);
       this.pieces.set(event.to, view);
       this.effects.spawnBurst(to.clone().setY(0.4), FACTION_ACCENT[event.color], 40, { speed: 2.6, life: 0.8 });
       this.effects.spawnFlash(to.clone().setY(0.6), 2.4, 0.4);
@@ -1994,7 +2222,7 @@ export class SceneEngine {
       volume: 0.78 + weight * 0.3,
     });
 
-    void spawnConquestClaim(this.scene, this.tweens, centre, {
+    void spawnConquestClaim(this.world, this.tweens, centre, {
       color: accent,
       radius: TILE * (2.1 + weight * 0.7),
       height: BOARD_TOP + 0.028,
@@ -2150,7 +2378,7 @@ export class SceneEngine {
 
     // Steel: the cut hangs in the air for a couple of frames after the blade.
     if (profile.slash) {
-      void spawnSlash(this.scene, this.tweens, impact, {
+      void spawnSlash(this.world, this.tweens, impact, {
         color: profile.slash.color,
         size: profile.slash.size,
         tilt: -0.55 - Math.random() * 0.35,
@@ -2160,7 +2388,7 @@ export class SceneEngine {
     // Weight: a blow that carries into the floor sends a wave across the stone.
     if (profile.wave) {
       audio.groundSlam({ pan: this.stereoPan(victimSpot), volume: Math.min(1, power * 0.6) });
-      void spawnGroundWave(this.scene, this.tweens, victimSpot, {
+      void spawnGroundWave(this.world, this.tweens, victimSpot, {
         color: profile.wave.color,
         radius: profile.wave.radius,
         height: BOARD_TOP + 0.03,
@@ -2240,7 +2468,7 @@ export class SceneEngine {
   ): Promise<void> {
     const settings = QUALITY_SETTINGS[this.preset];
     audio.judgementToll({ pan: this.stereoPan(at), volume: 0.95 });
-    void spawnPillar(this.scene, this.tweens, at, {
+    void spawnPillar(this.world, this.tweens, at, {
       color: pillar.color,
       radius: pillar.radius,
       height: 5.6,
@@ -2504,14 +2732,14 @@ export class SceneEngine {
     const lock = Math.min(gun.lock, untilShot * 0.5);
     await wait(untilShot - lock);
     audio.triggerPull({
-      pan: this.stereoPan(attacker.muzzleOrigin()),
+      pan: this.stereoPan(this.toGame(attacker.muzzleOrigin())),
       weight: gun.calibre,
       volume: 0.8 + gun.calibre * 0.4,
     });
     await wait(lock);
 
     // ---- the shot ------------------------------------------------------
-    const muzzle = attacker.muzzleOrigin();
+    const muzzle = this.toGame(attacker.muzzleOrigin());
     const chest = victimSpot.clone().setY(0.58);
     const line = chest.clone().sub(muzzle);
     const distance = Math.max(0.001, line.length());
@@ -2528,7 +2756,7 @@ export class SceneEngine {
     // Flame width is read off the round that is about to leave the bore, so the
     // charge always out-shines its own projectile.
     const flame = muzzleFlare(gun);
-    void spawnMuzzleFlash(this.scene, this.tweens, muzzle, {
+    void spawnMuzzleFlash(this.world, this.tweens, muzzle, {
       look,
       size: flame,
       direction: aim,
@@ -2543,7 +2771,7 @@ export class SceneEngine {
     // A smoothbore leaves soot in the faction's livery tint; the marksman's
     // rifled barrel leaves pale ash grey you can see the hall through.
     const powder = gun.smokeTint ?? look.smoke;
-    void spawnPowderCloud(this.scene, this.tweens, muzzle, {
+    void spawnPowderCloud(this.world, this.tweens, muzzle, {
       look,
       size: 0.34 + gun.calibre * 0.7,
       direction: aim,
@@ -2588,7 +2816,7 @@ export class SceneEngine {
     const clear = muzzle.clone().addScaledVector(aim, Math.min(0.42, flame * 0.44));
     const smoking = settings.captureParticles >= 34;
     let nextWisp = 0.12;
-    await flyShot(this.scene, this.tweens, clear, chest, {
+    await flyShot(this.world, this.tweens, clear, chest, {
       look,
       ammo: gun.ammo,
       size: gun.ball,
@@ -2631,7 +2859,7 @@ export class SceneEngine {
     const round = AMMUNITION[gun.ammo];
     const body = this.impactBody(victim);
     const violence = round.shatter * (0.75 + power * 0.25);
-    void spawnImpactShatter(this.scene, this.tweens, chest, {
+    void spawnImpactShatter(this.world, this.tweens, chest, {
       body,
       along: aim,
       power: violence,
@@ -2669,7 +2897,7 @@ export class SceneEngine {
     if (gun.ammo === "roundShot") {
       const beyond = chest.clone().addScaledVector(aim, TILE * 1.7).setY(BOARD_TOP + 0.05);
       void (async () => {
-        await flyShot(this.scene, this.tweens, chest, beyond, {
+        await flyShot(this.world, this.tweens, chest, beyond, {
           look,
           ammo: gun.ammo,
           size: gun.ball,
@@ -2680,7 +2908,7 @@ export class SceneEngine {
         audio.ballImpact({ pan: this.stereoPan(beyond), volume: 0.42 });
         // Hot iron on flagstone: the ricochet throws stone chips and a long
         // shower of sparks that skitter away across the floor.
-        void spawnImpactShatter(this.scene, this.tweens, beyond, {
+        void spawnImpactShatter(this.world, this.tweens, beyond, {
           body: "flagstone",
           // Skipping off the floor, so the spall comes up out of the stone.
           along: aim.clone().setY(-0.75).normalize(),
@@ -2707,7 +2935,7 @@ export class SceneEngine {
     // A field gun does not stop at the body: the stone takes the rest of it.
     if (gun.wave) {
       audio.groundSlam({ pan: this.stereoPan(victimSpot), volume: Math.min(1, power * 0.5) });
-      void spawnGroundWave(this.scene, this.tweens, victimSpot, {
+      void spawnGroundWave(this.world, this.tweens, victimSpot, {
         color: gun.wave.color,
         radius: gun.wave.radius,
         height: BOARD_TOP + 0.03,
@@ -2816,7 +3044,7 @@ export class SceneEngine {
         next += 1 / wisps;
         // 0 on the frame after the shot, 1 as the bore goes cold.
         const cooling = Math.min(1, t);
-        this.effects.spawnSmoke(attacker.muzzleOrigin(), {
+        this.effects.spawnSmoke(this.toGame(attacker.muzzleOrigin()), {
           count: 1,
           radius: width * 0.5,
           scale: width * (0.7 + cooling * 0.75),
@@ -2879,7 +3107,7 @@ export class SceneEngine {
    */
   private gunRecoil(attacker: PieceView, gun: GunProfile): void {
     const settings = QUALITY_SETTINGS[this.preset];
-    const carriage = attacker.trainOrigin();
+    const carriage = this.toGame(attacker.trainOrigin());
     if (carriage) {
       const pan = this.stereoPan(carriage);
       // The trail slamming back over the stone, just behind the report.
@@ -3001,8 +3229,8 @@ export class SceneEngine {
     const settings = QUALITY_SETTINGS[this.preset];
     const look = SPELL_LOOK[attacker.color];
     const orb = new SpellOrb(look, size, this.spellLights.acquire(look.light, 4.6));
-    orb.group.position.copy(attacker.castOrigin());
-    this.scene.add(orb.group);
+    orb.group.position.copy(this.toGame(attacker.castOrigin()));
+    this.world.add(orb.group);
 
     audio.spellCharge({ pan: this.stereoPan(orb.group.position), duration, volume: size * 2 });
     attacker.flareAura(Math.min(1.2, size * 1.4));
@@ -3014,7 +3242,7 @@ export class SceneEngine {
         duration,
         easing: Ease.linear,
         onUpdate: (t) => {
-          const at = attacker.castOrigin();
+          const at = this.toGame(attacker.castOrigin());
           orb.group.position.copy(at);
           // Slow to catch, then it runs away with itself.
           orb.setIntensity(t * t * 1.15);
@@ -3057,7 +3285,7 @@ export class SceneEngine {
     if (options.delay && options.delay > 0) await wait(options.delay);
     const settings = QUALITY_SETTINGS[this.preset];
     const look = SPELL_LOOK[attacker.color];
-    const start = attacker.castOrigin();
+    const start = this.toGame(attacker.castOrigin());
     const size = options.size ?? 0.52;
     const leader = options.leader === true;
     // Leaders come in off the shoulder rather than straight down the line.
@@ -3077,7 +3305,7 @@ export class SceneEngine {
     const orb = new SpellOrb(look, size, leader ? null : this.spellLights.acquire(look.light, 4.6));
     orb.group.position.copy(start);
     orb.setIntensity(1);
-    this.scene.add(orb.group);
+    this.world.add(orb.group);
 
     audio.spellCast({ pan: this.stereoPan(start), volume: leader ? 0.5 : 1 });
     this.shake.add(leader ? 0.04 : 0.08);
@@ -3188,7 +3416,7 @@ export class SceneEngine {
     if (ring > 0) {
       // Fire thrown out flat across the square, and the floor answering it.
       audio.groundSlam({ pan: this.stereoPan(at), volume: 0.5 });
-      void spawnGroundWave(this.scene, this.tweens, at, {
+      void spawnGroundWave(this.world, this.tweens, at, {
         color: look.flame,
         radius: ring,
         height: BOARD_TOP + 0.03,
@@ -3576,8 +3804,9 @@ export class SceneEngine {
   }
 
   /** Where a world point sits across the screen, as a -1..1 stereo position. */
+  /** Takes a game-space point (everything in the engine is), pans by where it sits in view. */
   private stereoPan(position: THREE.Vector3): number {
-    const projected = position.clone().project(this.camera);
+    const projected = this.world.localToWorld(position.clone()).project(this.camera);
     if (!Number.isFinite(projected.x)) return 0;
     return Math.max(-1, Math.min(1, projected.x));
   }
@@ -3684,6 +3913,7 @@ export class SceneEngine {
   }
 
   async moveCameraTo(shot: CameraShot, duration = 1.1): Promise<void> {
+    if (this.table) return;
     const fromPosition = this.camera.position.clone();
     const fromTarget = this.controls.target.clone();
     this.controls.enabled = false;
@@ -3819,6 +4049,7 @@ export class SceneEngine {
   }
 
   setCameraPreset(preset: CameraPreset): void {
+    if (this.table) return;
     // Picking a 3D shot always folds the flat map away first.
     if (this.tactical) {
       this.setTacticalView(false, CAMERA_SHOTS[preset]);
@@ -3882,6 +4113,7 @@ export class SceneEngine {
 
   /** Camera move that also eases the lens between the 3D and map framings. */
   private async flyTo(framing: Framing): Promise<void> {
+    if (this.table) return;
     const fromPosition = this.camera.position.clone();
     const fromTarget = this.controls.target.clone();
     const fromFov = this.camera.fov;
@@ -3964,6 +4196,7 @@ export class SceneEngine {
    * the current distance and elevation so the framing never jumps.
    */
   private async orbitBy(deltaTheta: number, duration: number): Promise<void> {
+    if (this.table) return;
     if (this.orbiting) return;
     this.orbiting = true;
     const target = this.controls.target.clone();
@@ -3992,6 +4225,7 @@ export class SceneEngine {
    * from the opponent's side. Works from any preset or hand-dragged angle.
    */
   flipCamera(): void {
+    if (this.table) return;
     if (this.orbiting) return;
     this.cameraFlipped = !this.cameraFlipped;
     this.callbacks.onCameraFlipped?.(this.cameraFlipped);
@@ -4010,10 +4244,12 @@ export class SceneEngine {
    * following, so it has to read as the hall turning rather than a cut.
    */
   private async swingCamera(): Promise<void> {
+    if (this.table) return;
     await this.orbitBy(Math.PI, 1.8);
   }
 
   async playIntro(): Promise<void> {
+    if (this.table) return;
     if (this.introPlaying) return;
     this.introPlaying = true;
     this.introSkipped = false;
@@ -4165,7 +4401,7 @@ export class SceneEngine {
     group.add(scrim);
     this.promotionScrim = scrim;
 
-    this.scene.add(group);
+    this.world.add(group);
     this.promotionGroup = group;
     this.promotionHover = null;
     this.setBoardOverlaysMuted(true);
@@ -4239,7 +4475,7 @@ export class SceneEngine {
 
   private closePromotionPicker(): void {
     if (this.promotionGroup) {
-      this.scene.remove(this.promotionGroup);
+      this.world.remove(this.promotionGroup);
       this.promotionGroup.traverse((node) => {
         const carrier = node as THREE.Mesh | THREE.Sprite;
         if ((carrier as THREE.Mesh).isMesh && (carrier as THREE.Mesh).geometry) (carrier as THREE.Mesh).geometry.dispose();
@@ -4449,7 +4685,11 @@ export class SceneEngine {
 
   private squareUnderRay(): SquareId | null {
     const point = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.boardPlane, point)) return null;
+    // The ray is in world space; the board plane is in game space (the same
+    // thing in the 2D hall, scaled and placed on a real table).
+    this.world.updateWorldMatrix(true, false);
+    const ray = this.raycaster.ray.clone().applyMatrix4(this.world.matrixWorld.clone().invert());
+    if (!ray.intersectPlane(this.boardPlane, point)) return null;
     return worldToSquare(point.x, point.z);
   }
 
@@ -4566,7 +4806,15 @@ export class SceneEngine {
     }
 
     const { square, piece } = this.pickTarget();
+    this.handleSquareTap(square, piece);
+  };
 
+  /**
+   * The rules of a click on a square, shared by the mouse, a touch, a hand ray
+   * and a released order: pick a figure, play a lit square, swap to another of
+   * your figures, stand down, or (while the machine thinks) aim a premove.
+   */
+  private handleSquareTap(square: SquareId | null, piece: PieceView | null): void {
     if (!square) {
       this.clearSelection();
       return;
@@ -4601,7 +4849,7 @@ export class SceneEngine {
     }
 
     if (piece && piece.color === snapshot.turn) this.selectWithTap(square, piece);
-  };
+  }
 
   // ---------------------------------------------------------------- premoves
 
@@ -5198,6 +5446,8 @@ export class SceneEngine {
   }
 
   handleResize = (): void => {
+    // The headset sizes its own framebuffer; three refuses a resize while presenting.
+    if (this.table) return;
     const parent = this.canvas.parentElement;
     const width = parent?.clientWidth ?? window.innerWidth;
     const height = parent?.clientHeight ?? window.innerHeight;
@@ -5277,6 +5527,7 @@ export class SceneEngine {
    * player was watching from — a rotation re-frames the board, it never spins it.
    */
   private reframeCamera(framing: Framing, duration: number): void {
+    if (this.table) return;
     if (this.introPlaying || this.cameraScripted) return;
     const current = new THREE.Spherical().setFromVector3(
       this.scratchDesired.copy(this.camera.position).sub(this.controls.target),
@@ -5305,6 +5556,7 @@ export class SceneEngine {
    * frame, so the view climbs over the hall rather than backing into it.
    */
   private confineCamera(): void {
+    if (this.table) return;
     // The intro deliberately flies in from outside the walls.
     if (this.introPlaying || this.cameraScripted) return;
     const ground = Math.hypot(this.camera.position.x, this.camera.position.z);
@@ -5337,7 +5589,7 @@ export class SceneEngine {
   private onContextLost = (event: Event): void => {
     event.preventDefault();
     this.running = false;
-    cancelAnimationFrame(this.frameId);
+    this.renderer.setAnimationLoop(null);
     this.callbacks.onContextLost();
   };
 
@@ -5350,7 +5602,7 @@ export class SceneEngine {
   dispose(): void {
     this.disposed = true;
     this.running = false;
-    cancelAnimationFrame(this.frameId);
+    this.renderer.setAnimationLoop(null);
     this.tweens.cancelAll();
     this.controller.setAnimator(null);
     this.controls.removeEventListener("start", this.onManualCamera);
