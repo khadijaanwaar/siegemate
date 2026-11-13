@@ -9,6 +9,7 @@
 // manifest: see docs/deploy.md). Nothing secret is written to disk.
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { extname, join, relative, sep } from "node:path";
 
 const API = "https://api.cloudflare.com/client/v4";
@@ -94,5 +95,7 @@ await api("/pages/assets/upsert-hashes", { hashes: files.map((file) => file.hash
 
 const manifest = Object.fromEntries(files.map((file) => [file.url, file.hash]));
 writeFileSync(manifestOut, JSON.stringify(manifest));
+// Gzipped + base64 for handing to the deployment call (the MCP sandbox can gunzip it).
+writeFileSync(`${manifestOut}.gz.b64`, gzipSync(JSON.stringify(manifest), { level: 9 }).toString("base64"));
 const total = files.reduce((sum, file) => sum + file.size, 0);
 console.log(`${files.length} files (${(total / 1e6).toFixed(1)} MB), ${toUpload.length} uploaded, manifest -> ${manifestOut}`);
