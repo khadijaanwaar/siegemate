@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { APP_NAME } from "../brand";
 import { Clapperboard, Crown, Swords, Settings as SettingsIcon, Users } from "lucide-react";
 
 import type { DemoOptions, Difficulty, Faction } from "../core/types";
@@ -73,7 +74,7 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
       <div className="mc-unfurl mc-menu-hero mb-6 shrink-0 text-center">
         <p className="mc-display text-[0.68rem] tracking-[0.55em] text-[#c8ab74]">Anno Domini MCDXCII</p>
         <h1 className="mc-display mc-title-glow mt-2 text-5xl font-bold text-[#f4e3bd] sm:text-6xl">
-          KING&apos;S GAMBIT
+          {APP_NAME.toUpperCase()}
         </h1>
         <div className="mc-rule mx-auto mt-3 w-64" />
         <p className="mt-3 text-sm italic text-[#c5b28d]">
