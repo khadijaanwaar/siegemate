@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyGpu, nextPresetForFps } from "./quality";
+import { classifyGpu, nextPresetForFps, presetFromQuery } from "./quality";
 
 const desktop = { cores: 8, memory: 8, touch: false };
 
@@ -47,5 +47,17 @@ describe("nextPresetForFps", () => {
 
   it("has nowhere to go below low", () => {
     expect(nextPresetForFps("low", 30)).toBeNull();
+  });
+});
+
+describe("presetFromQuery", () => {
+  it("reads a valid preset from the query string", () => {
+    expect(presetFromQuery("?quality=medium")).toBe("medium");
+    expect(presetFromQuery("?safe=1&quality=ultra")).toBe("ultra");
+  });
+
+  it("ignores anything that is not a preset", () => {
+    expect(presetFromQuery("?quality=max")).toBeNull();
+    expect(presetFromQuery("")).toBeNull();
   });
 });

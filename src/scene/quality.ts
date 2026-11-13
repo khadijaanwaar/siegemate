@@ -31,6 +31,11 @@ export interface QualitySettings {
    * by default, so the entire rank read as having lost its animation.
    */
   idleAnimations: boolean;
+  /**
+   * Idle figures update every Nth frame (1 = every frame). Banked time keeps
+   * their clips in step; anything mid-beat, selected or hovered runs every frame.
+   */
+  idleUpdateEvery: number;
   /** Instanced silhouette soldiers drawn up per distant army. */
   troopCount: number;
   /** Lit camp pyres outside the walls (each one is a real point light). */
@@ -59,6 +64,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     maxPixelRatio: 1,
     captureParticles: 18,
     idleAnimations: false,
+    idleUpdateEvery: 2,
     troopCount: 60,
     campfires: 0,
     ashCount: 0,
@@ -82,6 +88,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     maxPixelRatio: 1.5,
     captureParticles: 34,
     idleAnimations: true,
+    idleUpdateEvery: 2,
     troopCount: 140,
     campfires: 2,
     ashCount: 70,
@@ -105,6 +112,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     maxPixelRatio: 2,
     captureParticles: 60,
     idleAnimations: true,
+    idleUpdateEvery: 1,
     troopCount: 240,
     campfires: 3,
     ashCount: 130,
@@ -128,6 +136,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     maxPixelRatio: 2,
     captureParticles: 90,
     idleAnimations: true,
+    idleUpdateEvery: 1,
     troopCount: 320,
     campfires: 4,
     ashCount: 220,
@@ -149,6 +158,8 @@ export const QUALITY_ORDER: QualityPreset[] = ["low", "medium", "high", "ultra"]
  */
 export function detectQualityPreset(): QualityPreset {
   if (typeof window === "undefined") return "high";
+  const forced = presetFromQuery(window.location.search);
+  if (forced) return forced;
   const isTouch = window.matchMedia("(pointer: coarse)").matches;
   const cores = navigator.hardwareConcurrency ?? 4;
   const reported = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
@@ -196,6 +207,12 @@ export function classifyGpu({ renderer, cores, memory, touch }: GpuFacts): Quali
   if (strongGpu && cores >= 8 && memory >= 8) return "ultra";
   if (cores >= 6 && memory >= 4) return "high";
   return "medium";
+}
+
+/** `?quality=low|medium|high|ultra` pins the preset (tests, and support for a struggling device). */
+export function presetFromQuery(search: string): QualityPreset | null {
+  const value = new URLSearchParams(search).get("quality");
+  return QUALITY_ORDER.find((preset) => preset === value) ?? null;
 }
 
 /** The frame rate under which the watchdog gives up a preset. */

@@ -2,7 +2,7 @@
 // the frame against draw-call / triangle budgets. Exit code 1 on any breach.
 //
 //   node tools/perf-check.mjs [--max-calls N] [--max-tris N] [--max-piece-draws N]
-//                             [--max-board N] [--wait ms] [--spoof-cores N] [--json]
+//                             [--max-board N] [--wait ms] [--quality low|medium|high|ultra] [--json]
 //
 // Uses the real GPU through Chrome (channel "chrome"). `window.__scene` comes
 // from SceneEngine.exposeStats(), which only exists in dev/test builds.
@@ -25,6 +25,8 @@ const budgets = {
 };
 const wait = opt("wait", 40000);
 const spoofCores = opt("spoof-cores", 0);
+const qualityIndex = args.indexOf("--quality");
+const quality = qualityIndex >= 0 ? args[qualityIndex + 1] : "";
 const port = 4300 + Math.floor(Math.random() * 500);
 
 const out = mkdtempSync(join(tmpdir(), "perf-check-"));
@@ -41,7 +43,7 @@ try {
   if (spoofCores) {
     await page.addInitScript((cores) => Object.defineProperty(Navigator.prototype, "hardwareConcurrency", { get: () => cores }), spoofCores);
   }
-  await page.goto(`http://localhost:${port}/`);
+  await page.goto(`http://localhost:${port}/${quality ? `?quality=${quality}` : ""}`);
   await page.waitForTimeout(wait);
   const result = await page.evaluate(() => {
     const stats = window.__scene;

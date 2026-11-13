@@ -28,6 +28,7 @@ import { PLAQUE_ASPECT, promotionPlaqueTexture } from "./rankBadges";
 import { PostFX } from "./postfx";
 import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./quality";
 import { listDrawables, sceneBreakdown } from "./sceneStats";
+import { IdleScheduler } from "./idleScheduler";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -1083,6 +1084,8 @@ export class SceneEngine {
   private fpsSamples: number[] = [];
   /** When the watchdog last changed the preset; it waits a settle window before judging again. */
   private lastAutoAdjustAt = Number.NEGATIVE_INFINITY;
+  /** Idle figures update in turns; see `IdleScheduler`. */
+  private readonly idle = new IdleScheduler(1);
   private lastFpsReport = 0;
 
   constructor(
@@ -1096,6 +1099,7 @@ export class SceneEngine {
     this.arena = arena;
     const look = ARENA_LOOKS[arena];
     const settings = QUALITY_SETTINGS[preset];
+    this.idle.setBuckets(settings.idleUpdateEvery);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -1266,9 +1270,19 @@ export class SceneEngine {
     this.alarm.update(delta);
     this.shake.update(delta);
 
-    for (const piece of this.pieces.values()) piece.update(delta, this.elapsed);
+    // Figures in a beat (`motion`) and in the promotion picker run every frame;
+    // the ones standing on their squares or in the tray take turns.
+    this.idle.beginFrame();
+    for (const [square, piece] of this.pieces) {
+      const busy = square === this.selected || piece === this.hoveredPiece;
+      const step = this.idle.step(piece, delta, busy);
+      if (step !== null) piece.update(step, this.elapsed);
+    }
     for (const piece of this.motion) piece.update(delta, this.elapsed);
-    for (const piece of this.captured) piece.update(delta, this.elapsed);
+    for (const piece of this.captured) {
+      const step = this.idle.step(piece, delta, false);
+      if (step !== null) piece.update(step, this.elapsed);
+    }
     for (const piece of this.promotionViews) piece.update(delta, this.elapsed);
 
     if (this.promotionGroup) this.layoutPromotionPicker(delta);
@@ -4974,6 +4988,7 @@ export class SceneEngine {
     if (preset === this.preset) return;
     this.preset = preset;
     const settings = QUALITY_SETTINGS[preset];
+    this.idle.setBuckets(settings.idleUpdateEvery);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.maxPixelRatio));
     this.renderer.shadowMap.enabled = settings.shadows && !this.safeMode;
     this.hall.applyQuality(preset);
