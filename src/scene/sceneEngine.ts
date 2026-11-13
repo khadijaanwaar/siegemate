@@ -1179,6 +1179,8 @@ export class SceneEngine {
     this.board.applyArena(look);
     this.world.add(this.effects.group);
     this.world.add(this.alarm.group);
+    // Rings, contact shadows and crests for every figure, one instanced layer each.
+    this.world.add(this.factory.marks.group);
     // Three slots: the gathering fire, the killing bolt and a judgement column
     // can all be alight at once. Anything beyond that goes unlit rather than
     // growing the set. Presets without post-processing stay entirely unlit.

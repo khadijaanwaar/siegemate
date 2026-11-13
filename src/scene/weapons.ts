@@ -1135,60 +1135,145 @@ const PALETTE: Record<Faction, Record<WeaponRole, { color: number; roughness: nu
   },
 };
 
-function makeMaterial(role: WeaponRole, color: Faction): THREE.MeshStandardMaterial {
-  const spec = PALETTE[color][role];
+/** Roles seen from both sides: shield cloth and plumes. */
+const DOUBLE_SIDED: ReadonlySet<WeaponRole> = new Set<WeaponRole>(["cloth", "feather"]);
+
+/**
+ * A whole prop is one draw: every role's surface lives in the vertices rather
+ * than in a material of its own (see {@link weaponGeometry}), and this reads it
+ * back.
+ *
+ *  - `color` (through `vertexColors`) is the role's base colour.
+ *  - `armSurface` is roughness, metalness, whether the role receives shadows
+ *    (gems never did) and whether it is seen from both sides.
+ *  - `armGlow` is the emissive colour and its resting strength.
+ *
+ * The material's own `emissiveIntensity` is the figure's highlight *boost*, added
+ * on top of each role's resting glow — gems take only 0.6 of it, as they always
+ * have, so a selected crystal brightens without blowing out. The material is
+ * double-sided so cloth and plumes keep their back faces; every other role
+ * discards its back faces, which is what `FrontSide` used to do for it.
+ */
+function installArmSurface(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      "#include <common>",
+      `#include <common>
+attribute vec4 armSurface;
+attribute vec4 armGlow;
+varying vec4 vArmSurface;
+varying vec4 vArmGlow;`,
+    )
+    .replace(
+      "#include <color_vertex>",
+      `#include <color_vertex>
+vArmSurface = armSurface;
+vArmGlow = armGlow;`,
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      "#include <common>",
+      `#include <common>
+varying vec4 vArmSurface;
+varying vec4 vArmGlow;`,
+    )
+    .replace(
+      "#include <clipping_planes_fragment>",
+      `#include <clipping_planes_fragment>
+if ( !gl_FrontFacing && vArmSurface.w < 0.5 ) discard;`,
+    )
+    .replace("#include <roughnessmap_fragment>", "float roughnessFactor = vArmSurface.x;")
+    .replace("#include <metalnessmap_fragment>", "float metalnessFactor = vArmSurface.y;")
+    .replace(
+      "#include <emissivemap_fragment>",
+      "totalEmissiveRadiance = vArmGlow.rgb * ( vArmGlow.a + emissive.r * ( vArmGlow.a > 1.0 ? 0.6 : 1.0 ) );",
+    )
+    // `receiveShadow` is a per-object uniform; gems opt out per vertex.
+    .replace(
+      "#include <lights_fragment_begin>",
+      `bool armReceiveShadow = receiveShadow && vArmSurface.z > 0.5;
+#define receiveShadow armReceiveShadow
+#include <lights_fragment_begin>
+#undef receiveShadow`,
+    );
+}
+
+/**
+ * The one material a figure's primitive arms share. Per figure, not per army:
+ * the selection highlight, the fade and the dissolve all write into it.
+ */
+function makeArmMaterial(): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({
-    color: spec.color,
-    roughness: spec.roughness,
-    metalness: spec.metalness,
-    emissive: new THREE.Color(spec.emissive),
-    // Shield faces must never vanish when a figure turns its back to camera.
-    side: role === "cloth" || role === "feather" ? THREE.DoubleSide : THREE.FrontSide,
+    vertexColors: true,
+    roughness: 1,
+    metalness: 1,
+    // White, so the `emissive` uniform carries the highlight boost unchanged.
+    emissive: 0xffffff,
+    side: THREE.DoubleSide,
   });
-  material.emissiveIntensity = spec.emissiveIntensity;
-  material.envMapIntensity = role === "gem" ? 0.6 : 1.3;
+  material.emissiveIntensity = 0;
+  material.envMapIntensity = 1.3;
+  material.onBeforeCompile = installArmSurface;
+  material.customProgramCacheKey = () => "arm-surface";
   return material;
 }
 
 // ------------------------------------------------------------------- caching
 
-const geometryCache = new Map<WeaponId, Map<WeaponRole, THREE.BufferGeometry>>();
+const geometryCache = new Map<string, THREE.BufferGeometry>();
 
-/** Merges the parts of a weapon into one geometry per material role, once. */
-function weaponGeometries(id: WeaponId): Map<WeaponRole, THREE.BufferGeometry> {
-  const cached = geometryCache.get(id);
+/** Writes one role's surface, in one army's livery, into every vertex. */
+function paintRole(geometry: THREE.BufferGeometry, role: WeaponRole, color: Faction): void {
+  const spec = PALETTE[color][role];
+  const count = geometry.getAttribute("position").count;
+  const base = new THREE.Color(spec.color);
+  const glow = new THREE.Color(spec.emissive);
+  const colors = new Float32Array(count * 3);
+  const surface = new Float32Array(count * 4);
+  const glows = new Float32Array(count * 4);
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    base.toArray(colors, vertex * 3);
+    surface[vertex * 4] = spec.roughness;
+    surface[vertex * 4 + 1] = spec.metalness;
+    surface[vertex * 4 + 2] = role === "gem" ? 0 : 1;
+    surface[vertex * 4 + 3] = DOUBLE_SIDED.has(role) ? 1 : 0;
+    glow.toArray(glows, vertex * 4);
+    glows[vertex * 4 + 3] = spec.emissiveIntensity;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute("armSurface", new THREE.BufferAttribute(surface, 4));
+  geometry.setAttribute("armGlow", new THREE.BufferAttribute(glows, 4));
+}
+
+/**
+ * Every part of a weapon in one geometry, each role's colour and finish written
+ * into its vertices. Built once per weapon and livery, shared by the army.
+ */
+function weaponGeometry(id: WeaponId, color: Faction): THREE.BufferGeometry {
+  const key = `${id}:${color}`;
+  const cached = geometryCache.get(key);
   if (cached) return cached;
 
-  const byRole = new Map<WeaponRole, THREE.BufferGeometry[]>();
-  for (const part of WEAPONS[id].build()) {
-    const list = byRole.get(part.role) ?? [];
-    list.push(part.geometry);
-    byRole.set(part.role, list);
+  // mergeGeometries refuses mixed indexed/non-indexed input (extrusions are
+  // non-indexed, primitives are indexed), so flatten everything first.
+  const parts = WEAPONS[id].build().map((part) => {
+    const plain = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry.clone();
+    part.geometry.dispose();
+    plain.deleteAttribute("uv");
+    plain.deleteAttribute("uv1");
+    if (!plain.getAttribute("normal")) plain.computeVertexNormals();
+    paintRole(plain, part.role, color);
+    return plain;
+  });
+  let merged = parts.length === 1 ? parts[0] : mergeGeometries(parts, false);
+  if (merged && merged !== parts[0]) {
+    for (const part of parts) part.dispose();
+  } else if (!merged) {
+    console.warn(`[weapons] could not merge "${id}", keeping its first part only`);
+    merged = parts[0];
+    for (const part of parts.slice(1)) part.dispose();
   }
-
-  const merged = new Map<WeaponRole, THREE.BufferGeometry>();
-  for (const [role, list] of byRole) {
-    // mergeGeometries refuses mixed indexed/non-indexed input (extrusions are
-    // non-indexed, primitives are indexed), so flatten everything first.
-    const flat = list.map((geometry) => {
-      const plain = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-      plain.deleteAttribute("uv");
-      plain.deleteAttribute("uv1");
-      geometry.dispose();
-      return plain;
-    });
-    let result = flat[0];
-    if (flat.length > 1) {
-      const combined = mergeGeometries(flat, false);
-      if (combined) {
-        for (const entry of flat) entry.dispose();
-        result = combined;
-      }
-    }
-    merged.set(role, result);
-  }
-
-  geometryCache.set(id, merged);
+  geometryCache.set(key, merged);
   return merged;
 }
 
@@ -1410,7 +1495,11 @@ function alignHeld(root: THREE.Object3D, held: HeldRig[], unit: number): void {
 export interface AttachedArms {
   meshes: THREE.Mesh[];
   materials: THREE.MeshStandardMaterial[];
-  /** Emissive strength each material was authored with, for highlight blending. */
+  /**
+   * Emissive strength each material rests at, for highlight blending. The
+   * primitive arms' shared material rests at 0: their glow is per vertex, and
+   * its `emissiveIntensity` is only the highlight on top.
+   */
   baseEmissive: number[];
   /**
    * Empty marker parented at the head of the main weapon, where a caster's fire
@@ -1474,8 +1563,10 @@ export function attachWeapons(
    *
    * Geometry and textures are shared across the army either way; only the
    * materials belong to this figure, because the selection highlight, the fade
-   * and the dissolve all write into them.
+   * and the dissolve all write into them. A primitive prop is one draw, and all
+   * of a figure's primitive props share one material.
    */
+  let primitiveMaterial: THREE.MeshStandardMaterial | null = null;
   const dress = (id: WeaponId, parent: THREE.Object3D): void => {
     const sculpted = instanceArmSculpt(id, color);
     if (sculpted) {
@@ -1485,17 +1576,20 @@ export function attachWeapons(
       for (const material of sculpted.materials) arms.baseEmissive.push(material.emissiveIntensity);
       return;
     }
-    for (const [role, geometry] of weaponGeometries(id)) {
-      const material = makeMaterial(role, color);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = role !== "gem";
-      mesh.frustumCulled = false;
-      parent.add(mesh);
-      arms.meshes.push(mesh);
-      arms.materials.push(material);
-      arms.baseEmissive.push(material.emissiveIntensity);
+    if (!primitiveMaterial) {
+      primitiveMaterial = makeArmMaterial();
+      arms.materials.push(primitiveMaterial);
+      // Each role's resting glow lives in its vertices, so the material rests at
+      // zero and only ever carries the highlight boost (see installArmSurface).
+      arms.baseEmissive.push(0);
     }
+    const mesh = new THREE.Mesh(weaponGeometry(id, color), primitiveMaterial);
+    mesh.name = `arms_${id}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    parent.add(mesh);
+    arms.meshes.push(mesh);
   };
 
   /**

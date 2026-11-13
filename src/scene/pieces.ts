@@ -11,9 +11,10 @@ import {
   type PieceAnimationSet,
 } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
+import { FigureMarks, type FigureMark } from "./figureMarks";
 import { createGltfLoader, loadGltf } from "./gltfQueue";
-import { BADGE_LIFT, BADGE_SCALE, TOKEN_SCALE, rankBadgeTexture, tacticalTokenTexture } from "./rankBadges";
-import { factionRingTexture, radialTexture } from "./textures";
+import { mergeStaticParts } from "./merge";
+import { BADGE_LIFT, BADGE_SCALE, TOKEN_SCALE } from "./rankBadges";
 import { Ease, type TweenManager } from "./tween";
 import { armSculptWarmJobs, attachWeapons, type AttachedArms } from "./weapons";
 
@@ -166,6 +167,10 @@ float dvNoise(vec3 p) {
  * as a flat decal. It is what makes an army's silhouette readable against the
  * figure behind it, at any camera height, in a hall lit by torches.
  *
+ * Runs after any shader patch the material already carries (the primitive arms
+ * read their surface from the vertices, see `scene/weapons.ts`), never instead
+ * of it.
+ *
  * @param heightBias how much the burn sweeps from the soles upward (0 = even)
  */
 function installDissolve(
@@ -174,7 +179,11 @@ function installDissolve(
   heightBias: number,
 ): void {
   const bias = heightBias.toFixed(3);
-  material.onBeforeCompile = (shader) => {
+  const patched = material.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile;
+  const previous = material.onBeforeCompile.bind(material);
+  const prefix = patched ? `${material.customProgramCacheKey()}|` : "";
+  material.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -228,7 +237,7 @@ gl_FragColor.rgb += uDissolveEmber * dvGlow * 3.2;`,
   };
   // Two materials with identical parameters but different injected source would
   // otherwise share one compiled program.
-  material.customProgramCacheKey = () => `dissolve-${bias}`;
+  material.customProgramCacheKey = () => `${prefix}dissolve-${bias}`;
   material.needsUpdate = true;
 }
 
@@ -513,8 +522,13 @@ export class PieceView {
 
   private materials: THREE.MeshStandardMaterial[] = [];
   private baseEmissive = 0.05;
-  private glow: THREE.Mesh;
-  private shadow: THREE.Mesh | null = null;
+  /**
+   * The board-wide layers this figure's ring, contact shadow, crest and counter
+   * are drawn in. The figure only moves and fades its own marks' anchors.
+   */
+  private readonly marks: FigureMarks;
+  private glow: FigureMark;
+  private shadow: FigureMark | null = null;
   private phase = Math.random() * Math.PI * 2;
   private hovered = false;
   private selected = false;
@@ -547,8 +561,7 @@ export class PieceView {
    * Flat overhead counter used by the tactical view. Built the first time the
    * board is flattened, then kept for the rest of the figure's life.
    */
-  private token: THREE.Mesh | null = null;
-  private tokenMaterial: THREE.MeshBasicMaterial | null = null;
+  private token: FigureMark | null = null;
   /** True while the board is read from straight above as a 2D map. */
   private flat = false;
   /** Ease between sculpt and counter, so the swap is not a hard cut. */
@@ -556,8 +569,8 @@ export class PieceView {
   /** In-plane spin that keeps the stamped rank upright on screen. */
   private tokenYaw = 0;
 
-  /** Floating rank crest; billboards itself because it is a sprite. */
-  private badge: THREE.Sprite | null = null;
+  /** Floating rank crest; its layer turns it to face the camera. */
+  private badge: FigureMark | null = null;
   private badgeWanted = true;
   /** Held down while something modal owns the screen (the promotion picker). */
   private badgeMuted = false;
@@ -593,6 +606,7 @@ export class PieceView {
     color: Faction,
     model: THREE.Object3D,
     options: PieceVisualOptions,
+    marks: FigureMarks,
     clips: PieceClips = {},
     unit = 1,
     baseY = 0,
@@ -602,6 +616,7 @@ export class PieceView {
     this.kind = kind;
     this.color = color;
     this.arsenal = arsenal;
+    this.marks = marks;
     this.majestic = ROYAL_KINDS.includes(kind);
 
     this.container.name = `piece_${color}${kind}`;
@@ -647,36 +662,18 @@ export class PieceView {
     // Painted onto the tile rather than added to it: an additive glow tinted the
     // army's colour disappears into a lit marble square (which is most of the
     // board), and disappearing is the one thing this must not do.
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      map: sharedRingTexture(color),
-      color: FACTION_RING[color],
-      transparent: true,
-      opacity: RING_REST,
-      depthWrite: false,
-      // The band is an instrument, not lit stone: keep it out of the grade so it
-      // reads the same in a bright hall and a dark one.
-      toneMapped: false,
-    });
-    this.glow = new THREE.Mesh(sharedDiscGeometry(), glowMaterial);
-    this.glow.rotation.x = -Math.PI / 2;
-    this.glow.position.y = 0.012;
-    this.glow.renderOrder = 3;
-    this.container.add(this.glow);
+    this.glow = marks.addRing(FACTION_RING_SHAPE[color], FACTION_RING[color], RING_REST);
+    this.glow.anchor.rotation.x = -Math.PI / 2;
+    this.glow.anchor.position.y = 0.012;
+    this.glow.anchor.scale.setScalar(DISC_SIZE);
+    this.container.add(this.glow.anchor);
 
     if (options.contactShadows) {
-      const shadowMaterial = new THREE.MeshBasicMaterial({
-        map: sharedShadowTexture(),
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-      });
-      this.shadow = new THREE.Mesh(sharedDiscGeometry(), shadowMaterial);
-      this.shadow.rotation.x = -Math.PI / 2;
-      this.shadow.position.y = 0.006;
-      this.shadow.scale.setScalar(0.85);
-      this.shadow.renderOrder = 1;
-      this.container.add(this.shadow);
+      this.shadow = marks.addShadow(0.55);
+      this.shadow.anchor.rotation.x = -Math.PI / 2;
+      this.shadow.anchor.position.y = 0.006;
+      this.shadow.anchor.scale.setScalar(DISC_SIZE * 0.85);
+      this.container.add(this.shadow.anchor);
     }
 
     this.badgeWanted = options.rankBadge !== false;
@@ -686,36 +683,24 @@ export class PieceView {
     this.equipArms(model, unit, baseY, arsenal);
   }
 
-  /** Crest sprite, parked just above the figure's crown. */
+  /** Crest, parked just above the figure's crown. */
   private buildBadge(): void {
-    const material = new THREE.SpriteMaterial({
-      map: rankBadgeTexture(this.kind, this.color),
-      transparent: true,
-      // Always legible: a crest hidden behind the piece in front of it would
-      // defeat the whole point of putting it there.
-      depthTest: false,
-      depthWrite: false,
-      opacity: 0,
-      sizeAttenuation: true,
-    });
-    const badge = new THREE.Sprite(material);
-    badge.scale.setScalar(BADGE_SCALE[this.kind]);
-    badge.position.y = PIECE_HEIGHT[this.kind] + BADGE_LIFT;
-    badge.renderOrder = 40;
-    badge.visible = this.badgeWanted;
-    badge.frustumCulled = false;
+    const badge = this.marks.addCrest(this.kind, this.color, 0);
+    badge.anchor.scale.setScalar(BADGE_SCALE[this.kind]);
+    badge.anchor.position.y = PIECE_HEIGHT[this.kind] + BADGE_LIFT;
+    badge.anchor.visible = this.badgeWanted;
     this.badge = badge;
-    this.container.add(badge);
+    this.container.add(badge.anchor);
   }
 
   /** Board-wide toggle for the floating crests. */
   setBadgeEnabled(enabled: boolean): void {
     this.badgeWanted = enabled;
     if (!this.badge) return;
-    this.badge.visible = enabled && !this.badgeMuted && !this.slain;
+    this.badge.anchor.visible = enabled && !this.badgeMuted && !this.slain;
     if (!enabled) {
       this.badgeOpacity = 0;
-      (this.badge.material as THREE.SpriteMaterial).opacity = 0;
+      this.badge.opacity = 0;
     }
   }
 
@@ -729,11 +714,11 @@ export class PieceView {
     this.badgeMuted = muted;
     if (!this.badge) return;
     if (muted) {
-      this.badge.visible = false;
+      this.badge.anchor.visible = false;
       this.badgeOpacity = 0;
-      (this.badge.material as THREE.SpriteMaterial).opacity = 0;
+      this.badge.opacity = 0;
     } else {
-      this.badge.visible = this.badgeWanted && !this.slain && !this.flat;
+      this.badge.anchor.visible = this.badgeWanted && !this.slain && !this.flat;
     }
   }
 
@@ -749,9 +734,9 @@ export class PieceView {
     this.flat = enabled;
     if (enabled && !this.token) this.buildToken();
     this.visual.visible = !enabled;
-    if (this.shadow) this.shadow.visible = !enabled;
-    if (this.badge) this.badge.visible = !enabled && this.badgeWanted && !this.badgeMuted && !this.slain;
-    if (this.token) this.token.visible = enabled;
+    if (this.shadow) this.shadow.anchor.visible = !enabled;
+    if (this.badge) this.badge.anchor.visible = !enabled && this.badgeWanted && !this.badgeMuted && !this.slain;
+    if (this.token) this.token.anchor.visible = enabled;
     // A strike frozen mid-clip while the board was flat has to be released.
     if (!enabled && !this.slain && this.mixer) this.returnToStance(0.2);
   }
@@ -762,67 +747,54 @@ export class PieceView {
   }
 
   private buildToken(): void {
-    const material = new THREE.MeshBasicMaterial({
-      map: tacticalTokenTexture(this.kind, this.color),
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      // The counter is an instrument, not lit stone: keep it out of the grade.
-      toneMapped: false,
-    });
-    const token = new THREE.Mesh(sharedTokenGeometry(), material);
-    token.rotation.x = -Math.PI / 2;
-    token.position.y = 0.055;
-    token.scale.setScalar(TOKEN_SCALE[this.kind]);
-    token.renderOrder = 12;
-    token.frustumCulled = false;
-    token.visible = false;
+    const token = this.marks.addToken(this.kind, this.color, 0);
+    token.anchor.rotation.x = -Math.PI / 2;
+    token.anchor.position.y = 0.055;
+    token.anchor.scale.setScalar(TOKEN_SCALE[this.kind]);
+    token.anchor.visible = false;
     this.token = token;
-    this.container.add(token);
-    this.tokenMaterial = material;
+    this.container.add(token.anchor);
   }
 
   private updateToken(delta: number, alarmPulse: number): void {
     const token = this.token;
-    const material = this.tokenMaterial;
-    if (!token || !material) return;
+    if (!token) return;
 
     if (this.flat) this.tokenFade = Math.min(1, this.tokenFade + delta * 5);
     else this.tokenFade = Math.max(0, this.tokenFade - delta * 7);
 
-    token.visible = this.tokenFade > 0.01;
-    if (!token.visible) return;
+    token.anchor.visible = this.tokenFade > 0.01;
+    if (!token.anchor.visible) return;
 
-    token.rotation.z = this.tokenYaw;
+    token.anchor.rotation.z = this.tokenYaw;
     const settle = this.aura * this.aura;
     const pop =
       1 + (this.selected ? 0.14 : this.hovered ? 0.07 : 0) + alarmPulse * 0.2 + settle * 0.16;
-    token.scale.setScalar(TOKEN_SCALE[this.kind] * pop * this.tokenFade);
-    token.position.y = 0.055 + (this.selected ? 0.05 : 0);
+    token.anchor.scale.setScalar(TOKEN_SCALE[this.kind] * pop * this.tokenFade);
+    token.anchor.position.y = 0.055 + (this.selected ? 0.05 : 0);
 
     // Blows and the check alarm burn straight through the plate.
     const heat = Math.min(1, this.hit * this.hit + alarmPulse * 0.7);
-    material.color.setRGB(1 + heat * 1.1, 1 - heat * 0.5, 1 - heat * 0.6);
-    material.opacity = this.tokenFade * this.fade * (1 - this.dissolveAmount);
+    token.color.setRGB(1 + heat * 1.1, 1 - heat * 0.5, 1 - heat * 0.6);
+    token.opacity = this.tokenFade * this.fade * (1 - this.dissolveAmount);
   }
 
   private updateBadge(delta: number, elapsed: number, alarmPulse: number): void {
     const badge = this.badge;
     if (!badge) return;
     const visible = this.badgeWanted && !this.badgeMuted && !this.slain && !this.flat;
-    badge.visible = visible;
+    badge.anchor.visible = visible;
     if (!visible) return;
 
     const target = this.selected ? 1 : this.hovered ? 0.95 : 0.72;
     this.badgeOpacity += (target - this.badgeOpacity) * Math.min(1, delta * 6);
-    const material = badge.material as THREE.SpriteMaterial;
-    material.opacity = this.badgeOpacity * this.fade;
+    badge.opacity = this.badgeOpacity * this.fade;
 
     const bob = Math.sin(elapsed * 1.5 + this.phase) * 0.022;
-    badge.position.y =
+    badge.anchor.position.y =
       PIECE_HEIGHT[this.kind] + BADGE_LIFT + bob + (this.selected ? 0.05 : 0);
     const pop = 1 + (this.selected ? 0.16 : this.hovered ? 0.08 : 0) + alarmPulse * 0.22;
-    badge.scale.setScalar(BADGE_SCALE[this.kind] * pop);
+    badge.anchor.scale.setScalar(BADGE_SCALE[this.kind] * pop);
   }
 
   /**
@@ -1219,9 +1191,9 @@ export class PieceView {
     this.alarm = 0;
     this.collider.visible = false;
     if (this.badge) {
-      this.badge.visible = false;
+      this.badge.anchor.visible = false;
       this.badgeOpacity = 0;
-      (this.badge.material as THREE.SpriteMaterial).opacity = 0;
+      this.badge.opacity = 0;
     }
     return this.playOneShot("death");
   }
@@ -1231,8 +1203,8 @@ export class PieceView {
    * discs pinned to the ground, so they have to go while the body is in the air.
    */
   setAirborne(airborne: boolean): void {
-    this.glow.visible = !airborne;
-    if (this.shadow) this.shadow.visible = !airborne && !this.flat;
+    this.glow.anchor.visible = !airborne;
+    if (this.shadow) this.shadow.anchor.visible = !airborne && !this.flat;
   }
 
   /** Back to a calm stance (used when a fallen figure reaches the tray). */
@@ -1244,7 +1216,7 @@ export class PieceView {
     this.aura = 0;
     this.collider.visible = true;
     this.visual.scale.set(1, 1, 1);
-    if (this.badge) this.badge.visible = this.badgeWanted;
+    if (this.badge) this.badge.anchor.visible = this.badgeWanted;
     this.setAirborne(false);
     this.runtime.position.set(0, 0, 0);
     this.runtime.rotation.set(0, 0, 0);
@@ -1473,13 +1445,10 @@ export class PieceView {
         material.depthWrite = value > 0.6;
       }
     }
-    const glowMaterial = this.glow.material as THREE.MeshBasicMaterial;
-    glowMaterial.opacity = RING_REST * value;
-    if (this.shadow) (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.55 * value;
-    if (this.badge) {
-      (this.badge.material as THREE.SpriteMaterial).opacity = this.badgeOpacity * value;
-    }
-    if (this.tokenMaterial) this.tokenMaterial.opacity = this.tokenFade * value;
+    this.glow.opacity = RING_REST * value;
+    if (this.shadow) this.shadow.opacity = 0.55 * value;
+    if (this.badge) this.badge.opacity = this.badgeOpacity * value;
+    if (this.token) this.token.opacity = this.tokenFade * value;
   }
 
   /**
@@ -1562,14 +1531,15 @@ export class PieceView {
         material.emissiveIntensity += (value - material.emissiveIntensity) * Math.min(1, delta * 8);
       });
     }
-    const glowMaterial = this.glow.material as THREE.MeshBasicMaterial;
     const settle = this.aura * this.aura;
     const glowTarget = Math.min(
       1,
       RING_REST + (this.selected ? 0.5 : this.hovered ? 0.3 : 0) + alarmPulse * 0.4 + settle * 0.4,
     );
-    glowMaterial.opacity += (glowTarget - glowMaterial.opacity) * Math.min(1, delta * 8);
-    this.glow.scale.setScalar(1 + (this.selected ? 0.16 : 0) + alarmPulse * 0.25 + settle * 0.5);
+    this.glow.opacity += (glowTarget - this.glow.opacity) * Math.min(1, delta * 8);
+    this.glow.anchor.scale.setScalar(
+      DISC_SIZE * (1 + (this.selected ? 0.16 : 0) + alarmPulse * 0.25 + settle * 0.5),
+    );
 
     this.updateBadge(delta, elapsed, alarmPulse);
     this.updateToken(delta, alarmPulse);
@@ -1597,8 +1567,7 @@ export class PieceView {
         material.emissiveIntensity += (base - material.emissiveIntensity) * Math.min(1, delta * 10);
       });
     }
-    const glowMaterial = this.glow.material as THREE.MeshBasicMaterial;
-    glowMaterial.opacity = Math.max(0, glowMaterial.opacity - delta * 0.6);
+    this.glow.opacity = Math.max(0, this.glow.opacity - delta * 0.6);
   }
 
   dispose(): void {
@@ -1615,17 +1584,14 @@ export class PieceView {
       for (const material of this.arms.materials) material.dispose();
       this.arms = null;
     }
-    (this.glow.material as THREE.Material).dispose();
-    if (this.shadow) (this.shadow.material as THREE.Material).dispose();
-    if (this.badge) {
-      (this.badge.material as THREE.Material).dispose();
-      this.badge = null;
-    }
-    if (this.tokenMaterial) {
-      this.tokenMaterial.dispose();
-      this.tokenMaterial = null;
-      this.token = null;
-    }
+    // The marks' layers are shared by the board; only this figure's entries go.
+    this.marks.remove(this.glow);
+    this.marks.remove(this.shadow);
+    this.marks.remove(this.badge);
+    this.marks.remove(this.token);
+    this.shadow = null;
+    this.badge = null;
+    this.token = null;
     this.container.removeFromParent();
     this.container.clear();
   }
@@ -1682,33 +1648,8 @@ function sharedColliderMaterial(): THREE.MeshBasicMaterial {
   return colliderMaterial;
 }
 
-let discGeometry: THREE.PlaneGeometry | null = null;
-function sharedDiscGeometry(): THREE.PlaneGeometry {
-  if (!discGeometry) discGeometry = new THREE.PlaneGeometry(0.95, 0.95);
-  return discGeometry;
-}
-
-let tokenGeometry: THREE.PlaneGeometry | null = null;
-function sharedTokenGeometry(): THREE.PlaneGeometry {
-  if (!tokenGeometry) tokenGeometry = new THREE.PlaneGeometry(1, 1);
-  return tokenGeometry;
-}
-
-const ringTextures = new Map<Faction, THREE.Texture>();
-function sharedRingTexture(faction: Faction): THREE.Texture {
-  let texture = ringTextures.get(faction);
-  if (!texture) {
-    texture = factionRingTexture(FACTION_RING_SHAPE[faction]);
-    ringTextures.set(faction, texture);
-  }
-  return texture;
-}
-
-let shadowTexture: THREE.Texture | null = null;
-function sharedShadowTexture(): THREE.Texture {
-  if (!shadowTexture) shadowTexture = radialTexture("rgba(0,0,0,0.85)", "rgba(0,0,0,0)");
-  return shadowTexture;
-}
+/** Side of the ground discs (faction ring, contact shadow) at rest, in squares. */
+const DISC_SIZE = 0.95;
 
 /** One army's roster key — the ivory kingdom or the Sun Empire. */
 export type TemplateKey = `${Faction}${PieceKind}`;
@@ -1739,6 +1680,11 @@ const MAX_CLIP_ATTEMPTS = 2;
  * procedural figure, so the board always fills whatever the network does.
  */
 export class PieceFactory {
+  /**
+   * Rings, contact shadows, crests and tactical counters of every figure this
+   * factory builds, drawn as one layer each. The scene adds `marks.group` once.
+   */
+  readonly marks = new FigureMarks();
   private templates = new Map<TemplateKey, Template>();
   private loader = createGltfLoader();
   private loaded = false;
@@ -2106,6 +2052,15 @@ export class PieceFactory {
     ownLivery: boolean,
     arsenal: ArsenalId,
   ): Template {
+    let skinned = false;
+    scene.traverse((node) => {
+      if ((node as THREE.SkinnedMesh).isSkinnedMesh) skinned = true;
+    });
+    // A static sculpt (or the procedural stand-in) built from parts that share a
+    // stone is one draw per figure, not one per part. Rigged sculpts are left as
+    // they are: a clip may drive any node by name.
+    if (!skinned && Object.keys(clips).length === 0) mergeStaticParts(scene);
+
     const box = measureModel(scene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -2115,11 +2070,6 @@ export class PieceFactory {
     const centre = new THREE.Vector3();
     box.getCenter(centre);
     const offset = new THREE.Vector3(-centre.x * scale, -box.min.y * scale, -centre.z * scale);
-
-    let skinned = false;
-    scene.traverse((node) => {
-      if ((node as THREE.SkinnedMesh).isSkinnedMesh) skinned = true;
-    });
 
     return { scene, scale, offset, skinned, clips, unit: height, baseY: box.min.y, ownLivery, arsenal };
   }
@@ -2138,6 +2088,7 @@ export class PieceFactory {
       color,
       model,
       options,
+      this.marks,
       template.clips,
       template.unit,
       template.baseY,
@@ -2155,6 +2106,7 @@ export class PieceFactory {
     this.clipSources.clear();
     this.mustered = null;
     this.disposeTemplates();
+    this.marks.dispose();
   }
 
   /**
