@@ -83,6 +83,8 @@ export class MixedReality {
   private readonly ui: TableUi;
   private readonly room = new RoomStyler();
   private lastFrameAt = 0;
+  /** `?debug` frame statistics, reported twice a second. */
+  private perfWindow = { since: 0, frames: 0, worst: 0 };
   private lessonKey = "";
 
   constructor(
@@ -209,9 +211,28 @@ export class MixedReality {
     if (this.state === "placing") this.updatePlacement(now, frame, space);
     this.updateHands(now, frame, space);
     this.styleRoom(now);
+    this.samplePerf(now);
     this.ui.update(now, { mr: this.state, placement: this.placement.state }, this.head.position, this.head.yaw, this.rig);
     this.showLesson();
   }
+
+  private samplePerf(now: number): void {
+    const stats = this.perfWindow;
+    if (stats.since === 0) stats.since = now;
+    const gap = this.lastPerfAt ? (now - this.lastPerfAt) * 1000 : 0;
+    this.lastPerfAt = now;
+    stats.frames += 1;
+    stats.worst = Math.max(stats.worst, gap);
+    if (now - stats.since < 0.5) return;
+    this.ui.showPerf({
+      fps: stats.frames / (now - stats.since),
+      worstMs: stats.worst,
+      calls: this.engine.xrRenderer.info.render.calls,
+    });
+    this.perfWindow = { since: now, frames: 0, worst: 0 };
+  }
+
+  private lastPerfAt = 0;
 
   /** The battleground restyles the room: veil, weather, and the board's light on the table. */
   private styleRoom(now: number): void {

@@ -27,7 +27,10 @@ export interface TableUiActions {
   arenaLabel(): string;
 }
 
-type PanelName = "coach" | "slab" | "menu" | "result";
+type PanelName = "coach" | "slab" | "menu" | "result" | "perf";
+
+/** `?debug` shows a frame-rate card beside the board (for testing on a device). */
+const SHOW_PERF = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
 
 function storage(): Storage | null {
   try {
@@ -95,6 +98,7 @@ export class TableUi {
       slab: new CanvasPanel(0.17, 0.085),
       menu: new CanvasPanel(0.26, 0.236),
       result: new CanvasPanel(0.28, 0.13),
+      perf: new CanvasPanel(0.17, 0.05),
     };
     for (const panel of Object.values(this.panels)) {
       panel.visible = false;
@@ -148,6 +152,21 @@ export class TableUi {
     }
     this.layout(rig, input.mr);
     for (const panel of Object.values(this.panels)) panel.update(now);
+  }
+
+  /** `?debug`: frame rate, worst frame and draw calls over the last half second. */
+  showPerf(stats: { fps: number; worstMs: number; calls: number }): void {
+    if (!SHOW_PERF) return;
+    const panel = this.panels.perf;
+    panel.visible = true;
+    const color = stats.fps >= 70 ? UI.azure : stats.fps >= 60 ? UI.gold : UI.danger;
+    this.setPanel(panel, {
+      lines: [
+        { text: `${Math.round(stats.fps)} fps`, size: 0.014, y: 0.018, color },
+        { text: `worst ${stats.worstMs.toFixed(1)} ms · ${stats.calls} draws`, size: 0.008, y: 0.038, color: UI.muted },
+      ],
+      buttons: [],
+    });
   }
 
   /** The first move to light for the lesson, or null (white opens e2-e4, black answers e7-e5). */
@@ -438,6 +457,7 @@ export class TableUi {
     }
     place(this.panels.coach, new THREE.Vector3(0, 0.11, -half - 0.03), "player");
     place(this.panels.slab, new THREE.Vector3(half + 0.11, 0.02, half - 0.06), "tilt");
+    place(this.panels.perf, new THREE.Vector3(-half - 0.11, 0.02, half - 0.06), "tilt");
     place(this.panels.menu, new THREE.Vector3(half + 0.13, 0.16, half - 0.12), "player");
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
   }
