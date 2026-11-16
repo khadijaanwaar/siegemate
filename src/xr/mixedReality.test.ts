@@ -279,6 +279,30 @@ describe("MixedReality lifecycle", () => {
   });
 });
 
+/** Presses (or lets go of) a button on a fake controller's gamepad. */
+function button(input: FakeInput, index: number, pressed: boolean): void {
+  (input.source.gamepad as unknown as { buttons: { pressed: boolean }[] }).buttons[index].pressed = pressed;
+}
+
+describe("MixedReality controllers", () => {
+  it("A or X opens the menu, once per press", async () => {
+    const { engine, table } = await playing();
+    const right = fakeInput("right", "controller");
+    right.aim(new THREE.Vector3(0.2, 1.1, -0.2), new THREE.Vector3(0, 0, -1));
+    engine.setInputs([right], table);
+    engine.frame(9);
+    button(right, 4, true);
+    engine.frame(9.02);
+    engine.frame(9.04);
+    expect(panels.calls).toEqual(["toggleMenu"]);
+    button(right, 4, false);
+    engine.frame(9.06);
+    button(right, 4, true);
+    engine.frame(9.08);
+    expect(panels.calls).toEqual(["toggleMenu", "toggleMenu"]);
+  });
+});
+
 describe("MixedReality hands", () => {
   const atPawn = new THREE.Vector3(0.02, 0.85, -0.4);
 

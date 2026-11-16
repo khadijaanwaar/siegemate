@@ -5,6 +5,8 @@ import type { PinchEvent } from "./hands";
 /** xr-standard gamepad layout (Touch, Touch Plus, Touch Pro): the trigger and the grip. */
 export const TRIGGER = 0;
 export const SQUEEZE = 1;
+/** A on the right controller, X on the left. */
+export const PRIMARY = 4;
 /** A press survives a tracking dropout this short; longer and the controller is lost. */
 export const TRACKING_GRACE_S = 0.15;
 

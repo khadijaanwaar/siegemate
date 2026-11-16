@@ -5,7 +5,7 @@ import type { GameController } from "../core/gameController";
 import { ARENA_LOOKS, type ArenaTheme } from "../scene/arena";
 import type { SceneEngine } from "../scene/sceneEngine";
 import type { SquareId } from "../core/types";
-import { buttonPressed, PressTracker, pulse, SQUEEZE, TRIGGER } from "./controllers";
+import { buttonPressed, PressTracker, PRIMARY, pulse, SQUEEZE, TRIGGER } from "./controllers";
 import { palmFacesHead, palmNormal, PinchTracker, type PinchEvent } from "./hands";
 import { Markers } from "./markers";
 import { loadBoardSize, saveBoardSize, twoHandTransform, type TwoHandStart } from "./manipulate";
@@ -61,6 +61,8 @@ interface HandSlot {
   pinch: PinchTracker;
   trigger: PressTracker;
   grip: PressTracker;
+  /** A / X: opens and closes the menu. */
+  menuButton: PressTracker;
   orders: HandOrders;
   /** This press started on a panel: it belongs to the panel until it lets go. */
   panelPinch: boolean;
@@ -130,6 +132,7 @@ export class MixedReality {
         pinch: new PinchTracker(),
         trigger: new PressTracker(),
         grip: new PressTracker(),
+        menuButton: new PressTracker(),
         orders: new HandOrders(engine),
         panelPinch: false,
         kind: null,
@@ -474,6 +477,10 @@ export class MixedReality {
         const grip = source.gripSpace ? frame.getPose(source.gripSpace, space) : undefined;
         const gripAt = grip ? this.gripPoint.set(grip.transform.position.x, grip.transform.position.y, grip.transform.position.z) : ray ? ray.origin : null;
         slot.grip.update(buttonPressed(source.gamepad, SQUEEZE), gripAt, now);
+        if (slot.menuButton.update(buttonPressed(source.gamepad, PRIMARY), this.head.position, now) === "start" && this.state === "playing") {
+          this.ui.toggleMenu();
+          pulse(source, 0.25, 15);
+        }
       }
 
       if (event === "start" && this.confirmPlacement()) {
@@ -511,6 +518,7 @@ export class MixedReality {
       const tracker = slot.kind === "controller" ? slot.trigger : slot.pinch;
       const event = tracker.update(null, null, now);
       slot.grip.update(null, null, now);
+      slot.menuButton.update(null, null, now);
       if (event) slot.orders.update(event, tracker.point, null);
       if (event === "lost") slot.panelPinch = false;
     }
@@ -597,6 +605,7 @@ export class MixedReality {
     slot.pinch.reset();
     slot.trigger.reset();
     slot.grip.reset();
+    slot.menuButton.reset();
     slot.panelPinch = false;
     slot.kind = kind;
   }

@@ -237,6 +237,11 @@ export class TableUi {
     if (target.button) this.press(target.panel, target.button.id);
   }
 
+  /** A controller's A / X: the same as pressing Menu on the slab. */
+  toggleMenu(): void {
+    if (this.panels.slab.visible) this.press(this.panels.slab, "menu");
+  }
+
   /** Tests: press a visible button by id. */
   pressById(id: string): boolean {
     for (const panel of this.interactive()) {

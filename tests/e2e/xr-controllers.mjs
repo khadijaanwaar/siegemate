@@ -143,6 +143,18 @@ try {
   check(!menuClosed.ui?.panels.includes("menu"), "and closes it", JSON.stringify(menuClosed.ui));
   check(menuClosed.fen === fenBeforeClose, "a press on a panel never reaches the board behind it", menuClosed.fen);
 
+  // ---- A opens the menu, and A again closes it.
+  const pressA = async () => {
+    await page.evaluate(() => window.__iwer.controllers.right.updateButtonValue("a-button", 1));
+    await page.waitForTimeout(200);
+    await page.evaluate(() => window.__iwer.controllers.right.updateButtonValue("a-button", 0));
+    await page.waitForTimeout(200);
+  };
+  await pressA();
+  check((await page.evaluate(() => window.__xr.ui()))?.panels.includes("menu"), "A opens the menu", "");
+  await pressA();
+  check(!(await page.evaluate(() => window.__xr.ui()))?.panels.includes("menu"), "A again closes it", "");
+
   // ---- promotion: a pawn on b7, b8 empty. Click b7, click b8: the crown card shows in the
   // headset (no picker hangs in front of the desktop camera); its Knight button, pressed along
   // the ray, crowns a knight and the game goes on.
