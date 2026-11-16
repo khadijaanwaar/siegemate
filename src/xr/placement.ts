@@ -1,7 +1,16 @@
 import * as THREE from "three";
 
-/** Seconds of searching for a table before the board appears at seat height anyway. */
-export const FALLBACK_AFTER_S = 4;
+/**
+ * Seconds of searching for a table before the board appears at seat height
+ * anyway. Only time the player could see the search counts (see {@link MAX_STEP_S}).
+ */
+export const FALLBACK_AFTER_S = 8;
+/**
+ * A longer gap between frames was time away (headset off, no frames at all):
+ * it is not searching. Generous enough that a slow frame (a shader compile, a
+ * loaded emulator) still counts in full.
+ */
+const MAX_STEP_S = 0.5;
 /** A lost hit keeps the reticle where it was for this long, so a flicker does not reset aiming. */
 const AIM_GRACE_S = 0.5;
 /** Seated reach: the board centre this far ahead of the eyes... */
@@ -62,6 +71,18 @@ export function isReachableSurface(point: THREE.Vector3, head: THREE.Vector3): b
   return reach <= MAX_REACH_M && drop >= MIN_DROP_M && drop <= MAX_DROP_M;
 }
 
+/**
+ * After a recenter (the Meta button) the world's origin moves and turns under
+ * the player while the player and the real table stay put. The head before
+ * and after the reset is the same physical head, so the board keeps its
+ * offset and turn relative to it: it stays on the same spot of the table.
+ */
+export function reanchorToHead(board: BoardPose, before: HeadPose, after: HeadPose): BoardPose {
+  const turn = after.yaw - before.yaw;
+  const offset = board.position.clone().sub(before.position).applyAxisAngle(UP, turn);
+  return { position: offset.add(after.position), yaw: board.yaw + turn };
+}
+
 /** The yaw that turns the board's white side (+Z) toward `head`. */
 export function yawFacing(board: THREE.Vector3, head: THREE.Vector3): number {
   return Math.atan2(head.x - board.x, head.z - board.z);
@@ -76,7 +97,9 @@ export function yawFacing(board: THREE.Vector3, head: THREE.Vector3): number {
  */
 export class Placement {
   private current: PlacementState = "searching";
-  private searchFrom: number | null = null;
+  /** Seconds spent looking without a table since the last one seen (or since asked). */
+  private searched = 0;
+  private lastUpdateAt: number | null = null;
   private lastHitAt = Number.NEGATIVE_INFINITY;
   private aim: BoardPose | null = null;
   private settled: BoardPose | null = null;
@@ -94,10 +117,12 @@ export class Placement {
 
   update(now: number, head: HeadPose, hit: SurfaceHit | null): void {
     if (this.current === "placed" || this.current === "fallback") return;
-    if (this.searchFrom === null) this.searchFrom = now;
+    const step = this.lastUpdateAt === null ? 0 : THREE.MathUtils.clamp(now - this.lastUpdateAt, 0, MAX_STEP_S);
+    this.lastUpdateAt = now;
 
     if (hit && isTableSurface(hit.normal) && isReachableSurface(hit.position, head.position)) {
       this.lastHitAt = now;
+      this.searched = 0;
       this.aim = { position: hit.position.clone(), yaw: yawFacing(hit.position, head.position) };
       this.current = "aiming";
       return;
@@ -107,8 +132,8 @@ export class Placement {
     this.current = "searching";
     this.aim = null;
 
-    const since = Math.max(this.searchFrom, Number.isFinite(this.lastHitAt) ? this.lastHitAt : this.searchFrom);
-    if (now - since >= FALLBACK_AFTER_S) {
+    this.searched += step;
+    if (this.searched >= FALLBACK_AFTER_S) {
       this.settled = fallbackBoardPose(head);
       this.current = "fallback";
     }
@@ -125,7 +150,8 @@ export class Placement {
   /** "Re-place board": start looking for a table again. */
   replace(now: number): void {
     this.current = "searching";
-    this.searchFrom = now;
+    this.searched = 0;
+    this.lastUpdateAt = now;
     this.lastHitAt = Number.NEGATIVE_INFINITY;
     this.aim = null;
     this.settled = null;

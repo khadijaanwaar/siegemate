@@ -24,6 +24,8 @@ export interface GameSettings {
   /** Floating rank crests over every figure. */
   rankBadges: boolean;
   muted: boolean;
+  /** The battleground's score and ambience (sound effects follow `muted` only). */
+  music: boolean;
   /**
    * Safe rendering: no composer, no reflection probe, no shadow maps. The way
    * out for drivers (mostly Linux/Mesa software rasterisers) that draw the hall
@@ -246,6 +248,12 @@ export function SettingsPanel({
           note="Score, ambience and effects"
           value={!settings.muted}
           onChange={(value) => onChange({ ...settings, muted: !value })}
+        />
+        <Toggle
+          label="Music"
+          note="The battleground's score and ambience"
+          value={settings.music}
+          onChange={(value) => onChange({ ...settings, music: value })}
         />
         </div>
       </div>

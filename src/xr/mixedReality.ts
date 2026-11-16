@@ -5,12 +5,23 @@ import type { GameController } from "../core/gameController";
 import { ARENA_LOOKS, type ArenaTheme } from "../scene/arena";
 import type { SceneEngine } from "../scene/sceneEngine";
 import type { SquareId } from "../core/types";
-import { buttonPressed, PressTracker, pulse, SQUEEZE, TRIGGER } from "./controllers";
+import { buttonPressed, PressTracker, PRIMARY, pulse, SQUEEZE, TRIGGER } from "./controllers";
 import { palmFacesHead, palmNormal, PinchTracker, type PinchEvent } from "./hands";
 import { Markers } from "./markers";
-import { loadBoardSize, saveBoardSize, twoHandTransform, type TwoHandStart } from "./manipulate";
+import {
+  loadBoardHeight,
+  loadBoardSize,
+  nudgeHeight,
+  pastDeadZone,
+  saveBoardHeight,
+  saveBoardSize,
+  TWO_HAND_REACH_M,
+  TWO_HAND_SYNC_S,
+  twoHandTransform,
+  type TwoHandStart,
+} from "./manipulate";
 import { GRAB_RADIUS_M, HandOrders } from "./orders";
-import { Placement, type HeadPose, type SurfaceHit } from "./placement";
+import { Placement, reanchorToHead, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
 import { RoomStyler } from "./roomStyler";
 import { nextArena, type BoardArea } from "./roomTheme";
@@ -28,6 +39,8 @@ export interface MixedRealityHooks {
   onFocus?: (focused: boolean) => void;
   /** The player picked another battleground in the headset (board, music and room follow). */
   onArena?: (theme: ArenaTheme) => void;
+  /** The player turned sound or music on or off in the headset menu (the 2D settings follow). */
+  onSound?: (change: { sound?: boolean; music?: boolean }) => void;
 }
 
 /** The board base's half width in game units, with its trim (matches the UI layout). */
@@ -49,8 +62,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 type InputKind = "hand" | "controller";
 type PanelTarget = NonNullable<ReturnType<TableUi["rayTarget"]>>;
 
-/** How far a pointer ray reaches when it is on nothing, in metres. */
-const HAND_RAY_M = 0.6;
+/** How far a controller's ray reaches when it is on nothing, in metres (a hand's is not drawn then). */
 const CONTROLLER_RAY_M = 1.5;
 
 /**
@@ -61,6 +73,10 @@ interface HandSlot {
   pinch: PinchTracker;
   trigger: PressTracker;
   grip: PressTracker;
+  /** A / X: opens and closes the menu. */
+  menuButton: PressTracker;
+  /** Thumbstick up or down raises or lowers the board: when it may step again, or null once it is back at rest. */
+  stickNextAt: number | null;
   orders: HandOrders;
   /** This press started on a panel: it belongs to the panel until it lets go. */
   panelPinch: boolean;
@@ -68,6 +84,11 @@ interface HandSlot {
   kind: InputKind | null;
   /** Its pointer ray last frame (tests and diagnostics). */
   ray: THREE.Ray | null;
+  /** When its current hold (pinch, or grip) closed, and whether that was within reach of the board. */
+  holdSince: number | null;
+  holdNear: boolean;
+  /** Its index fingertip last frame (tests and diagnostics). */
+  tip: THREE.Vector3 | null;
 }
 
 interface InputRead {
@@ -95,6 +116,19 @@ export class MixedReality {
   private state: MixedRealityState = "off";
   /** Set while both hands pinch away from any figure: they carry, turn and resize the board. */
   private twoHand: TwoHandStart | null = null;
+  /** The two-hand grab has left its dead zone and the board follows the hands. */
+  private twoHandMoving = false;
+  /** The reference space was reset since the last frame (the Meta button). */
+  private recentered = false;
+  /** Sound and music as the 2D settings have them (see {@link setSound}). */
+  private sound = { sound: true, music: true };
+  /** The height of the surface the board was placed on; the board stands {@link heightOffset} above it. */
+  private surfaceY = 0;
+  /** How far the player raised (or lowered) the board from where it was placed, remembered between sessions. */
+  private heightOffset = loadBoardHeight(safeStorage());
+  private readonly scratchPose = new THREE.Vector3();
+  /** False while the system menu is over the session or the headset is off (what {@link MixedRealityHooks.onFocus} last said). */
+  private focused = true;
   private readonly unsubscribe: (() => void)[] = [];
 
   // Scratch, reused every frame.
@@ -128,10 +162,15 @@ export class MixedReality {
         pinch: new PinchTracker(),
         trigger: new PressTracker(),
         grip: new PressTracker(),
+        menuButton: new PressTracker(),
+        stickNextAt: null,
         orders: new HandOrders(engine),
         panelPinch: false,
         kind: null,
         ray: null,
+        holdSince: null,
+        holdNear: false,
+        tip: null,
       });
     }
     this.ui = new TableUi(controller, {
@@ -144,12 +183,33 @@ export class MixedReality {
       exit: () => void this.exit(),
       cycleArena: () => this.hooks.onArena?.(nextArena(this.engine.getArena())),
       arenaLabel: () => ARENA_LOOKS[this.engine.getArena()].label,
+      promotion: () => this.engine.pendingPromotion,
+      promote: (kind) => {
+        this.engine.choosePromotion(kind);
+      },
+      sound: () => this.sound,
+      setSound: (change) => {
+        this.sound = { ...this.sound, ...change };
+        this.hooks.onSound?.(change);
+      },
+      height: () => this.heightOffset,
+      nudgeHeight: (direction) => this.nudgeHeight(direction),
     });
     this.rig.setScale(loadBoardSize(safeStorage()));
   }
 
   get current(): MixedRealityState {
     return this.state;
+  }
+
+  /** The 2D settings' sound and music, shown (and toggled) in the headset menu. */
+  setSound(sound: { sound: boolean; music: boolean }): void {
+    this.sound = { ...sound };
+  }
+
+  /** The board's height above (or below) where it was placed, in metres. */
+  get boardHeight(): number {
+    return this.heightOffset;
   }
 
   get placementState(): string {
@@ -183,10 +243,23 @@ export class MixedReality {
     this.rig.root.visible = false;
     this.placement.replace(performance.now() / 1000);
 
+    this.faceThePlayersArmy();
     this.unsubscribe.push(
-      this.table.onVisibility((visibility) => this.hooks.onFocus?.(visibility === "visible")),
+      this.table.onVisibility((visibility) => this.setFocused(visibility === "visible")),
       this.table.onEnd((requestedByApp) => this.teardown(requestedByApp)),
+      // A new game from the headset menu may change sides. (The snapshot is
+      // published after the `reset` event, so the side is read on `state`.)
+      this.controller.on("state", () => this.faceThePlayersArmy()),
     );
+    // The Meta button recentres the world: keep the board on its spot of the table.
+    const reference = this.engine.xrRenderer.xr.getReferenceSpace();
+    if (reference) {
+      const onReset = (): void => {
+        this.recentered = true;
+      };
+      reference.addEventListener("reset", onReset);
+      this.unsubscribe.push(() => reference.removeEventListener("reset", onReset));
+    }
     this.engine.setXrFrameHandler((time, frame) => this.onFrame(time / 1000, frame));
     this.setState("placing");
   }
@@ -197,11 +270,13 @@ export class MixedReality {
   }
 
   /** Tests: where a hand's pinch point is right now (thumb and index midpoint), and whether it is pinching. */
-  debugPinch(handedness: XRHandedness): { x: number; y: number; z: number; pinching: boolean; mode: string } | null {
+  debugPinch(
+    handedness: XRHandedness,
+  ): { x: number; y: number; z: number; pinching: boolean; mode: string; tip: number[] | null } | null {
     const slot = this.hands.get(handedness);
     if (!slot) return null;
     const { x, y, z } = slot.pinch.point;
-    return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode };
+    return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode, tip: slot.tip?.toArray() ?? null };
   }
 
   /** Tests: one side's controller as the game reads it. */
@@ -263,6 +338,7 @@ export class MixedReality {
       unitsToMeters: this.rig.unitsToMeters,
       contentScale: content.scale.x,
       rigVisible: this.rig.root.visible,
+      flipped: this.rig.flipped,
       board: measure(board),
       glowScale: glow?.scale.x,
       head: this.head.position.toArray().map((value) => Math.round(value * 100) / 100),
@@ -303,9 +379,16 @@ export class MixedReality {
     const space = this.engine.xrRenderer.xr.getReferenceSpace();
     if (!space) return;
     const viewer = frame.getViewerPose(space);
-    if (viewer) this.readHead(viewer.transform);
+    if (viewer) {
+      const before = this.recentered && this.lastFrameAt > 0 ? { position: this.head.position.clone(), yaw: this.head.yaw } : null;
+      this.recentered = false;
+      this.readHead(viewer.transform);
+      if (before) this.reanchor(before);
+    }
 
-    if (this.state === "placing") this.updatePlacement(now, frame, space);
+    // The search for a table runs only while the player can see it: time under
+    // the system menu or with the headset off never brings on the fallback.
+    if (this.state === "placing" && this.table?.session.visibilityState === "visible") this.updatePlacement(now, frame, space);
     this.updateInputs(now, frame, space);
     this.styleRoom(now);
     this.samplePerf(now);
@@ -345,8 +428,8 @@ export class MixedReality {
       ? { center: this.rig.root.position, half: BOARD_HALF_UNITS * this.rig.unitsToMeters }
       : null;
     const arena = this.engine.getArena();
-    if (this.room.current !== arena) this.room.setTheme(arena, this.head.position, board);
-    this.room.update(dt, this.head.position, board, this.rig.root.rotation.y);
+    if (this.room.current !== arena) this.room.setTheme(arena, this.head.position, board, this.head.yaw);
+    this.room.update(dt, this.head.position, board, this.rig.root.rotation.y, this.head.yaw);
   }
 
   /** The first-move lesson pulses the suggested move on the board. */
@@ -383,8 +466,8 @@ export class MixedReality {
 
     const pose = this.placement.pose;
     if (this.placement.state === "aiming" && pose) {
-      // The real board previews where it would go.
-      this.rig.setPose(pose.position, pose.yaw);
+      // The real board previews where it would go (at the height the player keeps it).
+      this.rig.setPose(this.scratchPose.copy(pose.position).setY(pose.position.y + this.heightOffset), pose.yaw);
       this.rig.root.visible = true;
       this.markers.showPlacement(pose.position);
     } else if (this.placement.state === "fallback" && pose) {
@@ -396,7 +479,8 @@ export class MixedReality {
   }
 
   private settle(position: THREE.Vector3, yaw: number, plinth: boolean): void {
-    this.rig.setPose(position, yaw);
+    this.surfaceY = position.y;
+    this.rig.setPose(this.scratchPose.copy(position).setY(position.y + this.heightOffset), yaw);
     this.rig.showPlinth(plinth);
     this.rig.root.visible = true;
     this.markers.showPlacement(null);
@@ -455,7 +539,11 @@ export class MixedReality {
             : false;
         event = slot.pinch.update(thumb, index, now, { allowStart: !systemGesture });
         point = slot.pinch.point;
-        poking = this.ui.poke(source.handedness, index ? this.fingertip.copy(index) : null);
+        // A hand mid-order (carrying a figure, or aiming) pokes nothing: its
+        // fingertip passing a panel must neither press it nor swallow the release.
+        const busy = slot.orders.mode !== "idle";
+        poking = this.ui.poke(source.handedness, index && !busy ? this.fingertip.copy(index) : null);
+        slot.tip = index ? (slot.tip ?? new THREE.Vector3()).copy(index) : null;
         poked ||= poking;
       } else {
         event = slot.trigger.update(buttonPressed(source.gamepad, TRIGGER), ray ? ray.origin : null, now);
@@ -463,6 +551,11 @@ export class MixedReality {
         const grip = source.gripSpace ? frame.getPose(source.gripSpace, space) : undefined;
         const gripAt = grip ? this.gripPoint.set(grip.transform.position.x, grip.transform.position.y, grip.transform.position.z) : ray ? ray.origin : null;
         slot.grip.update(buttonPressed(source.gamepad, SQUEEZE), gripAt, now);
+        if (slot.menuButton.update(buttonPressed(source.gamepad, PRIMARY), this.head.position, now) === "start" && this.state === "playing") {
+          this.ui.toggleMenu();
+          pulse(source, 0.25, 15);
+        }
+        this.readThumbstick(slot, source, now);
       }
 
       if (event === "start" && this.confirmPlacement()) {
@@ -500,17 +593,18 @@ export class MixedReality {
       const tracker = slot.kind === "controller" ? slot.trigger : slot.pinch;
       const event = tracker.update(null, null, now);
       slot.grip.update(null, null, now);
-      if (event) slot.orders.update(event, tracker.point, null);
+      slot.menuButton.update(null, null, now);
+      if (event) slot.orders.update(event, tracker.point, null, now);
       if (event === "lost") slot.panelPinch = false;
     }
 
-    this.updateTwoHand();
+    this.updateTwoHand(now);
 
     let ordering = false;
     let ring: SquareId | null = null;
     for (const { slot, source, event, point, ray, target } of reads) {
       const before = slot.orders.mode;
-      if (this.state === "playing" && !this.twoHand) slot.orders.update(event, point, ray);
+      if (this.state === "playing" && !this.twoHand) slot.orders.update(event, point, ray, now);
       const after = slot.orders.mode;
       if (slot.kind === "controller") {
         if (before !== "ordering" && after === "ordering") pulse(source, 0.3, 20);
@@ -526,14 +620,17 @@ export class MixedReality {
       }
       if (!ring && after !== "ordering") ring = square;
       if (!ray || this.twoHand || (after === "ordering" && !slot.orders.byRay)) continue;
+      // A hand's ray shows only while it is on a panel or the board: a hand at
+      // rest, or busy with something else in the room, draws nothing.
+      const onBoard = !target && !square && slot.kind === "hand" && this.rig.root.visible ? this.rig.rayToBoard(ray, BOARD_HALF_UNITS) : null;
       const length = target
         ? target.distance
         : square
           ? ray.origin.distanceTo(this.engine.squareCenterWorld(square, this.aimPoint))
           : slot.kind === "controller"
             ? CONTROLLER_RAY_M
-            : HAND_RAY_M;
-      rays.push({ ray, length });
+            : onBoard;
+      if (length !== null) rays.push({ ray, length });
     }
 
     if (panelTarget) this.ui.hoverRay(panelTarget);
@@ -548,13 +645,24 @@ export class MixedReality {
     else if (anyHand) this.pointer = "hands";
   }
 
-  /** Both sides holding (pinch, or grip on a controller), neither giving an order: they carry, turn and resize the board. */
-  private updateTwoHand(): void {
-    const left = this.holdPoint(this.hands.get("left"));
-    const right = this.holdPoint(this.hands.get("right"));
-    if (this.state === "playing" && left && right) {
+  /**
+   * Both sides holding (pinch, or grip on a controller), neither giving an
+   * order: they carry, turn and resize the board. Only a deliberate grab
+   * counts: both closed within {@link TWO_HAND_SYNC_S} of each other and
+   * within {@link TWO_HAND_REACH_M} of the board. Then nothing moves until the
+   * hands leave the dead zone, and the board follows on from there.
+   */
+  private updateTwoHand(now: number): void {
+    const leftSlot = this.hands.get("left");
+    const rightSlot = this.hands.get("right");
+    const left = this.trackHold(leftSlot, now);
+    const right = this.trackHold(rightSlot, now);
+    if (this.state === "playing" && left && right && leftSlot && rightSlot) {
       if (!this.twoHand) {
+        const together = Math.abs((leftSlot.holdSince ?? 0) - (rightSlot.holdSince ?? 0)) <= TWO_HAND_SYNC_S;
+        if (!together || !leftSlot.holdNear || !rightSlot.holdNear) return;
         for (const slot of this.hands.values()) slot.orders.cancelAim();
+        this.twoHandMoving = false;
         this.twoHand = {
           left: left.clone(),
           right: right.clone(),
@@ -564,13 +672,60 @@ export class MixedReality {
           keepHeight: !this.rig.plinthVisible,
         };
       }
+      if (!this.twoHandMoving) {
+        if (!pastDeadZone(this.twoHand, { left, right })) return;
+        // Pick up from here, so leaving the dead zone never makes the board jump.
+        this.twoHandMoving = true;
+        this.twoHand.left.copy(left);
+        this.twoHand.right.copy(right);
+      }
       const next = twoHandTransform(this.twoHand, { left, right });
       this.rig.setPose(next.position, next.yaw);
       this.rig.setScale(next.scale);
     } else if (this.twoHand) {
       this.twoHand = null;
+      // Carried up or down on the stand-in plinth: the height steps start from here.
+      this.surfaceY = this.rig.root.position.y - this.heightOffset;
       saveBoardSize(safeStorage(), this.rig.scaleMultiplier);
     }
+  }
+
+  /**
+   * Thumbstick up raises the board a step, down lowers it: once on the push,
+   * then again every 0.2 s while held (after a 0.4 s pause), like a key.
+   */
+  private readThumbstick(slot: HandSlot, source: XRInputSource, now: number): void {
+    const y = source.gamepad?.axes[3] ?? 0;
+    if (Math.abs(y) < 0.3) {
+      slot.stickNextAt = null;
+      return;
+    }
+    if (Math.abs(y) < 0.7 || this.state !== "playing") return;
+    if (slot.stickNextAt !== null && now < slot.stickNextAt) return;
+    slot.stickNextAt = now + (slot.stickNextAt === null ? 0.4 : 0.2);
+    // Pushed away (negative y) is up.
+    this.nudgeHeight(y < 0 ? 1 : -1);
+  }
+
+  /** Raises (1) or lowers (-1) the board one step from where it was placed, and remembers the height. */
+  private nudgeHeight(direction: 1 | -1): void {
+    if (this.state !== "playing") return;
+    this.heightOffset = nudgeHeight(this.heightOffset, direction);
+    this.rig.root.position.y = this.surfaceY + this.heightOffset;
+    this.rig.root.updateMatrixWorld(true);
+    saveBoardHeight(safeStorage(), this.heightOffset);
+  }
+
+  /** A side's hold point, noting when the hold closed and whether it closed on the board. */
+  private trackHold(slot: HandSlot | undefined, now: number): THREE.Vector3 | null {
+    const point = this.holdPoint(slot);
+    if (!slot) return null;
+    if (!point) slot.holdSince = null;
+    else if (slot.holdSince === null) {
+      slot.holdSince = now;
+      slot.holdNear = this.rig.root.visible && this.rig.distanceToBoard(point, BOARD_HALF_UNITS) <= TWO_HAND_REACH_M;
+    }
+    return point;
   }
 
   private holdPoint(slot: HandSlot | undefined): THREE.Vector3 | null {
@@ -582,10 +737,12 @@ export class MixedReality {
 
   /** A side changed between hand and controller: whatever it was doing stands down. */
   private switchKind(slot: HandSlot, kind: InputKind | null): void {
-    if (slot.orders.mode !== "idle") slot.orders.update("lost", slot.pinch.point, null);
+    // `lost` never reads the clock.
+    if (slot.orders.mode !== "idle") slot.orders.update("lost", slot.pinch.point, null, 0);
     slot.pinch.reset();
     slot.trigger.reset();
     slot.grip.reset();
+    slot.menuButton.reset();
     slot.panelPinch = false;
     slot.kind = kind;
   }
@@ -637,7 +794,7 @@ export class MixedReality {
     this.hitSource?.cancel();
     this.hitSource = null;
     for (const slot of this.hands.values()) {
-      slot.orders.update("lost", slot.pinch.point, null);
+      slot.orders.update("lost", slot.pinch.point, null, 0);
       this.switchKind(slot, null);
     }
     this.twoHand = null;
@@ -650,8 +807,42 @@ export class MixedReality {
     this.lastFrameAt = 0;
     this.rig.showPlinth(false);
     this.table = null;
+    // Quitting from the system menu ends the session while it is blurred: the
+    // game it paused belongs to the 2D page again, which is in focus.
+    this.setFocused(true);
     this.setState("off");
     this.hooks.onExit?.(requestedByApp);
+  }
+
+  /**
+   * The player's own army nearest: the board stands white-side toward the
+   * player, so against the computer as black it turns a half turn on its
+   * stand (the stand, panels and pose stay put). Two players at one board
+   * keep white near.
+   */
+  private faceThePlayersArmy(): void {
+    const snapshot = this.controller.getSnapshot();
+    const flipped = snapshot.mode === "ai" && snapshot.playerColor === "b";
+    if (flipped !== this.rig.flipped) this.rig.setFlipped(flipped);
+  }
+
+  /**
+   * The reference space was reset (recentred): the head read just now is the
+   * same physical head as last frame's in a new frame of reference, so the
+   * board keeps its place relative to it, which is its place on the table.
+   */
+  private reanchor(before: HeadPose): void {
+    if (this.state !== "playing") return;
+    this.twoHand = null;
+    const pose = reanchorToHead({ position: this.rig.root.position.clone(), yaw: this.rig.root.rotation.y }, before, this.head);
+    this.rig.setPose(pose.position, pose.yaw);
+    this.surfaceY = pose.position.y - this.heightOffset;
+  }
+
+  private setFocused(focused: boolean): void {
+    if (this.focused === focused) return;
+    this.focused = focused;
+    this.hooks.onFocus?.(focused);
   }
 
   private setState(state: MixedRealityState): void {

@@ -61,6 +61,20 @@ export class TableRig {
     return this.multiplier;
   }
 
+  /** True when the board is turned a half turn on its stand, black's army toward the player. */
+  get flipped(): boolean {
+    return this.content.rotation.y !== 0;
+  }
+
+  /**
+   * Turns the board (not the stand, the panels or the pose) a half turn about
+   * its centre, so a player of black has their own army nearest.
+   */
+  setFlipped(flipped: boolean): void {
+    this.content.rotation.y = flipped ? Math.PI : 0;
+    this.root.updateMatrixWorld(true);
+  }
+
   get plinthVisible(): boolean {
     return this.plinth.visible;
   }
@@ -69,6 +83,41 @@ export class TableRig {
   showPlinth(visible: boolean): void {
     this.plinth.visible = visible;
   }
+
+  /**
+   * Metres along `ray` (world space) to where it meets the board's top within
+   * `halfUnits` (game units) of its centre, or null when it misses or points away.
+   * A plane test: cheap enough for every hand, every frame.
+   */
+  rayToBoard(ray: THREE.Ray, halfUnits: number): number | null {
+    this.root.updateMatrixWorld(true);
+    this.inverse.copy(this.root.matrixWorld).invert();
+    const local = this.localRay.copy(ray).applyMatrix4(this.inverse);
+    const top = this.content.position.y;
+    if (Math.abs(local.direction.y) < 1e-6) return null;
+    const distance = (top - local.origin.y) / local.direction.y;
+    if (distance < 0) return null;
+    const half = halfUnits * this.unitsToMeters;
+    const x = local.origin.x + local.direction.x * distance;
+    const z = local.origin.z + local.direction.z * distance;
+    return Math.abs(x) <= half && Math.abs(z) <= half ? distance : null;
+  }
+
+  /** Metres from a world point to the board's block (the surface it stands on up to its top), `halfUnits` wide each way. */
+  distanceToBoard(point: THREE.Vector3, halfUnits: number): number {
+    this.root.updateMatrixWorld(true);
+    this.inverse.copy(this.root.matrixWorld).invert();
+    const local = this.localPoint.copy(point).applyMatrix4(this.inverse);
+    const half = halfUnits * this.unitsToMeters;
+    const dx = Math.max(Math.abs(local.x) - half, 0);
+    const dz = Math.max(Math.abs(local.z) - half, 0);
+    const dy = local.y > this.content.position.y ? local.y - this.content.position.y : Math.max(-local.y, 0);
+    return Math.hypot(dx, dy, dz);
+  }
+
+  private readonly localPoint = new THREE.Vector3();
+  private readonly inverse = new THREE.Matrix4();
+  private readonly localRay = new THREE.Ray();
 
   toWorld(local: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
     this.root.updateMatrixWorld(true);

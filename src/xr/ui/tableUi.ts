@@ -1,22 +1,24 @@
 import * as THREE from "three";
 
+import { audio } from "../../audio/audioManager";
 import type { GameController } from "../../core/gameController";
 import { loadStats, winRate } from "../../core/stats";
-import type { Difficulty, Faction, GameSnapshot } from "../../core/types";
+import type { Difficulty, Faction, GameSnapshot, PieceKind } from "../../core/types";
+import { drawShareCard, SHARE_CARD } from "../../share/headsetShare";
 import type { TableRig } from "../tableRig";
 import { CanvasPanel, type PanelButton } from "./canvasPanel";
 import { Coach, coachCopy, type CoachInput, type CoachStep, type Pointer } from "./coach";
+import { MENU_PANEL, menuButtons, menuLines, type MenuState, PROMOTION_PANEL, promotionButtons, promotionKindOf, SLAB_PANEL, slabButtons } from "./layouts";
 import { UI } from "./palette";
 import { PokeTracker } from "./poke";
 
 /** The board base's half width in game units, with its trim. */
 const BOARD_HALF_UNITS = 4.92;
 const ONBOARDED_KEY = "mr-chess:onboarded";
-const STRENGTHS: { id: Difficulty; label: string }[] = [
-  { id: "easy", label: "Squire" },
-  { id: "medium", label: "Knight" },
-  { id: "hard", label: "Warlord" },
-];
+/** Exit waits this long for its second tap. */
+const EXIT_CONFIRM_S = 3;
+/** A button hovered again within this long of its last hover does not blip again. */
+const HOVER_QUIET_S = 0.4;
 
 export interface TableUiActions {
   newGame(config: { difficulty: Difficulty; playerColor: Faction }): void;
@@ -25,9 +27,19 @@ export interface TableUiActions {
   exit(): void;
   cycleArena(): void;
   arenaLabel(): string;
+  /** The side whose pawn waits for its crown, or null. */
+  promotion(): Faction | null;
+  promote(kind: PieceKind): void;
+  /** Sound (everything) and music, as the 2D settings have them. */
+  sound(): { sound: boolean; music: boolean };
+  setSound(change: { sound?: boolean; music?: boolean }): void;
+  /** The board's height above (or below) where it was placed, in metres. */
+  height(): number;
+  /** One step up (1) or down (-1). */
+  nudgeHeight(direction: 1 | -1): void;
 }
 
-type PanelName = "coach" | "slab" | "menu" | "result" | "perf";
+type PanelName = "coach" | "slab" | "menu" | "result" | "share" | "perf" | "promote";
 
 /** `?debug` shows a frame-rate card beside the board (for testing on a device). */
 const SHOW_PERF = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
@@ -60,8 +72,10 @@ function writeFlag(key: string): void {
  * Everything the player reads or presses in the headset, with as few words as
  * possible: a coach card (one hint at a time), a control slab on the table in
  * poke reach (status, Undo, Menu), a menu card (new game with strength and
- * side, re-place, how to play, exit) and a result card at the end. All panels
- * are world-locked around the board and face the player without roll.
+ * side, battleground, sound, music, board height, re-place, how to play, exit),
+ * a crown card when a pawn promotes and a result card at the end. All panels
+ * are world-locked around the board and turn to face the player, without
+ * roll, once as they appear. Every button blips on hover and press.
  */
 export class TableUi {
   readonly group = new THREE.Group();
@@ -80,9 +94,19 @@ export class TableUi {
   private playerMoved = false;
   private statusKey = "";
   private strength: Difficulty = "medium";
-  /** The battleground name the menu was last drawn with. */
-  private menuArena = "";
+  /** What the menu was last drawn with. */
+  private menuKey = "";
+  /** Exit was tapped once: a second tap before this time (seconds, performance clock) leaves. */
+  private exitArmedUntil = 0;
+  /** The button each panel last showed hovered (for the hover blip). */
+  private readonly hovered = new Map<CanvasPanel, { id: string; at: number }>();
+  /** The panel each hand's fingertip is hovering this frame: a poke outranks any ray on it. */
+  private readonly pokeHover = new Map<XRHandedness, CanvasPanel | null>();
+  /** Panels that face the player: their turn relative to the board, set once when they appear. */
+  private readonly facing = new Map<CanvasPanel, THREE.Quaternion>();
   private side: Faction = "w";
+  /** The side the promotion card is open for. */
+  private promoting: Faction | null = null;
   private readonly unsubscribe: (() => void)[] = [];
   private readonly head = new THREE.Vector3();
   private headYaw = 0;
@@ -96,10 +120,12 @@ export class TableUi {
     this.panels = {
       // Read from ~0.75 m: 16 mm type keeps Meta's ~0.9 degree minimum.
       coach: new CanvasPanel(0.42, 0.08),
-      slab: new CanvasPanel(0.17, 0.085),
-      menu: new CanvasPanel(0.26, 0.236),
-      result: new CanvasPanel(0.28, 0.13),
+      slab: new CanvasPanel(SLAB_PANEL.width, SLAB_PANEL.height),
+      menu: new CanvasPanel(MENU_PANEL.width, MENU_PANEL.height),
+      result: new CanvasPanel(0.28, 0.17),
+      share: new CanvasPanel(SHARE_CARD.width, SHARE_CARD.height),
       perf: new CanvasPanel(0.17, 0.05),
+      promote: new CanvasPanel(PROMOTION_PANEL.width, PROMOTION_PANEL.height),
     };
     for (const panel of Object.values(this.panels)) {
       panel.visible = false;
@@ -118,6 +144,7 @@ export class TableUi {
         this.resultShown = false;
         this.pendingResult = false;
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
       }),
     );
   }
@@ -141,16 +168,20 @@ export class TableUi {
     if (step !== this.coachStep || pointer !== this.pointer) this.showCoach(step, pointer);
 
     const playing = input.mr === "playing";
-    if (this.menuOpen && this.actions.arenaLabel() !== this.menuArena) this.showMenu();
+    if (this.exitArmedUntil > 0 && performance.now() / 1000 > this.exitArmedUntil) this.disarmExit();
+    if (this.menuOpen && this.menuState().key !== this.menuKey) this.showMenu();
     this.panels.slab.visible = playing;
     if (playing) this.refreshStatus();
     if (this.pendingResult && playing) {
       this.pendingResult = false;
       this.showResult();
     }
+    const promoting = playing ? this.actions.promotion() : null;
+    if (promoting !== this.promoting) this.showPromotion(promoting);
     if (!playing) {
       this.panels.menu.visible = false;
       this.panels.result.visible = false;
+      this.panels.share.visible = false;
     }
     this.layout(rig, input.mr);
     for (const panel of Object.values(this.panels)) panel.update(now);
@@ -195,7 +226,8 @@ export class TableUi {
       }
     }
     const pressed = tracker.update(best ? best.depth : null, best?.id ?? null);
-    if (best) best.panel.setHover(tracker.hovered);
+    this.pokeHover.set(hand, best?.panel ?? null);
+    if (best) this.setHover(best.panel, tracker.hovered);
     if (pressed && best) this.press(best.panel, pressed);
     return best !== null && best.depth < 0.04;
   }
@@ -221,11 +253,20 @@ export class TableUi {
 
   /** Hover feedback for a ray (call with null to clear). */
   hoverRay(target: { panel: CanvasPanel; button: PanelButton | null } | null): void {
-    for (const panel of this.interactive()) panel.setHover(target && target.panel === panel ? (target.button?.id ?? null) : null);
+    const poked = new Set(this.pokeHover.values());
+    for (const panel of this.interactive()) {
+      if (poked.has(panel)) continue;
+      this.setHover(panel, target && target.panel === panel ? (target.button?.id ?? null) : null);
+    }
   }
 
   pressTarget(target: { panel: CanvasPanel; button: PanelButton | null }): void {
     if (target.button) this.press(target.panel, target.button.id);
+  }
+
+  /** A controller's A / X: the same as pressing Menu on the slab. */
+  toggleMenu(): void {
+    if (this.panels.slab.visible) this.press(this.panels.slab, "menu");
   }
 
   /** Tests: press a visible button by id. */
@@ -240,10 +281,10 @@ export class TableUi {
     return false;
   }
 
-  /** Tests and diagnostics: what is on show. */
-  describe(): { coach: CoachStep; panels: PanelName[]; pointer: Pointer } {
+  /** Tests and diagnostics: what is on show, and what the menu would start. */
+  describe(): { coach: CoachStep; panels: PanelName[]; pointer: Pointer; menu: { strength: Difficulty; side: Faction } } {
     const panels = (Object.keys(this.panels) as PanelName[]).filter((name) => this.panels[name].visible);
-    return { coach: this.coachStep, panels, pointer: this.pointer };
+    return { coach: this.coachStep, panels, pointer: this.pointer, menu: { strength: this.strength, side: this.side } };
   }
 
   /** Tests: the world-space centre of a visible button, or null. */
@@ -288,8 +329,29 @@ export class TableUi {
     panel.set(content, animate);
   }
 
+  /** Hover on a panel's button, with a soft blip as it moves onto a new one. */
+  private setHover(panel: CanvasPanel, id: string | null): void {
+    if (id !== null) {
+      // Once per button reached: a hover that flickers off and back for a
+      // frame or two (a fingertip at the edge of the poke volume) stays quiet.
+      const now = performance.now() / 1000;
+      const last = this.hovered.get(panel);
+      if (!last || last.id !== id || now - last.at > HOVER_QUIET_S) audio.blip("hover");
+      this.hovered.set(panel, { id, at: now });
+    }
+    panel.setHover(id);
+  }
+
   private press(panel: CanvasPanel, id: string): void {
     panel.flash(id);
+    const crown = promotionKindOf(id);
+    if (crown) {
+      // The engine sounds the choice itself.
+      this.actions.promote(crown);
+      return;
+    }
+    audio.blip("press");
+    if (id !== "exit" && this.exitArmedUntil > 0) this.disarmExit();
     switch (id) {
       case "skip":
         this.coach.skip();
@@ -299,6 +361,7 @@ export class TableUi {
         break;
       case "menu":
         this.menuOpen = !this.menuOpen;
+        if (this.menuOpen) this.seedMenu();
         this.showMenu();
         break;
       case "close":
@@ -318,9 +381,12 @@ export class TableUi {
         break;
       case "new":
       case "rematch":
+        // A rematch is the game just played again, whatever the menu last showed.
+        if (id === "rematch") this.seedMenu();
         this.menuOpen = false;
         this.showMenu();
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
         this.playerMoved = false;
         this.actions.newGame({ difficulty: this.strength, playerColor: this.side });
         break;
@@ -339,8 +405,32 @@ export class TableUi {
         this.playerMoved = false;
         this.coach.replay();
         break;
+      case "sound":
+        this.actions.setSound({ sound: !this.actions.sound().sound });
+        break;
+      case "music":
+        this.actions.setSound({ music: !this.actions.sound().music });
+        break;
+      case "raise":
+      case "lower":
+        this.actions.nudgeHeight(id === "raise" ? 1 : -1);
+        break;
       case "exit":
-        this.actions.exit();
+        // Leaving is one tap too easy to make by accident: the second tap, within 3 s, leaves.
+        if (performance.now() / 1000 <= this.exitArmedUntil) {
+          this.exitArmedUntil = 0;
+          this.actions.exit();
+        } else {
+          this.exitArmedUntil = performance.now() / 1000 + EXIT_CONFIRM_S;
+          this.redrawExit();
+        }
+        break;
+      case "share":
+        this.showShare();
+        break;
+      case "share-back":
+        this.panels.share.visible = false;
+        this.panels.result.visible = true;
         break;
       default:
         break;
@@ -370,18 +460,23 @@ export class TableUi {
 
   private refreshStatus(): void {
     const snapshot = this.controller.getSnapshot();
-    const key = [snapshot.status, snapshot.turn, snapshot.thinking, snapshot.inCheck, snapshot.canUndo, this.menuOpen].join("|");
+    const key = [snapshot.status, snapshot.turn, snapshot.thinking, snapshot.inCheck, snapshot.canUndo, this.menuOpen, this.promoting].join("|");
     if (key === this.statusKey) return;
     this.statusKey = key;
     const panel = this.panels.slab;
     const status = statusText(snapshot);
     this.setPanel(panel, {
       lines: [{ text: status.text, size: 0.012, y: 0.02, color: status.color }],
-      buttons: [
-        { id: "undo", rect: [0.012, 0.04, 0.068, 0.034], label: "Undo", disabled: !snapshot.canUndo },
-        { id: "menu", rect: [0.09, 0.04, 0.068, 0.034], label: "Menu", tone: this.menuOpen ? "selected" : "plain" },
-      ],
+      buttons: slabButtons({ canUndo: snapshot.canUndo && this.promoting === null, menuOpen: this.menuOpen }),
     });
+  }
+
+  /** The menu opens on the game being played: its strength and the player's side. */
+  private seedMenu(): void {
+    const snapshot = this.controller.getSnapshot();
+    if (snapshot.mode !== "ai") return;
+    this.strength = snapshot.difficulty;
+    this.side = snapshot.playerColor;
   }
 
   private showMenu(): void {
@@ -389,26 +484,50 @@ export class TableUi {
     panel.visible = this.menuOpen;
     this.statusKey = ""; // the Menu button shows its state
     if (!this.menuOpen) return;
-    this.menuArena = this.actions.arenaLabel();
-    const third = (panel.width - 0.04) / 3;
-    const buttons: PanelButton[] = [
-      ...STRENGTHS.map((strength, index) => ({
-        id: strength.id,
-        rect: [0.014 + index * (third + 0.006), 0.034, third, 0.03] as [number, number, number, number],
-        label: strength.label,
-        tone: this.strength === strength.id ? ("selected" as const) : ("plain" as const),
-      })),
-      { id: "side-w", rect: [0.014, 0.072, 0.11, 0.03], label: "Play white", tone: this.side === "w" ? "selected" : "plain" },
-      { id: "side-b", rect: [0.136, 0.072, 0.11, 0.03], label: "Play black", tone: this.side === "b" ? "selected" : "plain" },
-      { id: "arena", rect: [0.014, 0.11, panel.width - 0.028, 0.03], label: `Battleground · ${this.actions.arenaLabel()}` },
-      { id: "new", rect: [0.014, 0.148, panel.width - 0.028, 0.034], label: "New game", tone: "primary" },
-      { id: "replace", rect: [0.014, 0.19, 0.072, 0.03], label: "Re-place" },
-      { id: "howto", rect: [0.094, 0.19, 0.072, 0.03], label: "How to" },
-      { id: "exit", rect: [0.174, 0.19, 0.072, 0.03], label: "Exit", tone: "danger" },
-    ];
+    const { state, key } = this.menuState();
+    this.menuKey = key;
     this.setPanel(panel, {
-      lines: [{ text: "Strength", size: 0.009, y: 0.02, color: UI.muted }],
-      buttons,
+      lines: menuLines(state).map((line) => ({ ...line, color: line.color ?? UI.muted })),
+      buttons: menuButtons(state),
+    });
+  }
+
+  /** What the menu shows now, and a key that changes whenever any of it does. */
+  private menuState(): { state: MenuState; key: string } {
+    const sound = this.actions.sound();
+    const state: MenuState = {
+      strength: this.strength,
+      side: this.side,
+      arena: this.actions.arenaLabel(),
+      sound: sound.sound,
+      music: sound.music,
+      heightCm: Math.round(this.actions.height() * 100),
+      exitArmed: this.exitArmedUntil > 0,
+    };
+    return { state, key: Object.values(state).join("|") };
+  }
+
+  private disarmExit(): void {
+    this.exitArmedUntil = 0;
+    this.redrawExit();
+  }
+
+  /** Exit's label changed: redraw the cards that carry it. */
+  private redrawExit(): void {
+    if (this.menuOpen) this.showMenu();
+    if (this.resultShown && this.panels.result.visible) this.showResult();
+  }
+
+  /** The crown card: shown while a pawn of `color` waits on the last rank, hidden at null. */
+  private showPromotion(color: Faction | null): void {
+    this.promoting = color;
+    this.statusKey = ""; // Undo waits for the choice
+    const panel = this.panels.promote;
+    panel.visible = color !== null;
+    if (color === null) return;
+    this.setPanel(panel, {
+      lines: [{ text: "Promote your pawn to", size: 0.011, y: 0.017, color: color === "w" ? UI.azure : UI.ember }],
+      buttons: promotionButtons(),
     });
   }
 
@@ -432,23 +551,46 @@ export class TableUi {
       ],
       buttons: [
         { id: "rematch", rect: [0.016, 0.08, 0.12, 0.036], label: "Rematch", tone: "primary" },
-        { id: "exit", rect: [0.144, 0.08, 0.12, 0.036], label: "Exit" },
+        { id: "exit", rect: [0.148, 0.08, 0.12, 0.036], label: this.exitArmedUntil > 0 ? "Really exit?" : "Exit" },
+        { id: "share", rect: [0.016, 0.128, 0.252, 0.032], label: "Share this battle" },
       ],
     });
     panel.visible = true;
     this.resultShown = true;
   }
 
-  /** Puts each panel around the board, facing the player. */
+  /** The replay link as a QR code a phone can scan, in place of the result card. */
+  private showShare(): void {
+    const panel = this.panels.share;
+    const content = drawShareCard();
+    if (!content) return;
+    this.setPanel(panel, content);
+    this.panels.result.visible = false;
+    panel.visible = true;
+  }
+
+  /**
+   * Puts each panel around the board. A card for reading turns to face the
+   * player once, as it appears, then stays put with the board (it does not
+   * swim after the head); the slab lies tilted on the table.
+   */
   private layout(rig: TableRig, mr: CoachInput["mr"]): void {
     const half = BOARD_HALF_UNITS * rig.unitsToMeters;
     rig.root.updateMatrixWorld(true);
+    for (const panel of this.facing.keys()) if (!panel.visible || mr === "placing") this.facing.delete(panel);
     const place = (panel: CanvasPanel, local: THREE.Vector3, face: "player" | "tilt"): void => {
       const world = local.applyMatrix4(rig.root.matrixWorld);
       panel.mesh.position.copy(world);
       if (face === "player") {
-        // Face the eyes, upright: yaw and pitch, never roll.
-        panel.mesh.lookAt(this.head);
+        let turn = this.facing.get(panel);
+        if (!turn && panel.visible) {
+          // Face the eyes, upright: yaw and pitch, never roll. Kept relative to
+          // the board, so carrying or turning the board carries the card.
+          panel.mesh.lookAt(this.head);
+          turn = rig.root.quaternion.clone().invert().multiply(panel.mesh.quaternion);
+          this.facing.set(panel, turn);
+        }
+        if (turn) panel.mesh.quaternion.multiplyQuaternions(rig.root.quaternion, turn);
       } else {
         panel.mesh.rotation.set(-0.9, rig.root.rotation.y, 0, "YXZ");
       }
@@ -467,8 +609,12 @@ export class TableUi {
     place(this.panels.coach, new THREE.Vector3(0, 0.11, -half - 0.03), "player");
     place(this.panels.slab, new THREE.Vector3(half + 0.11, 0.02, half - 0.06), "tilt");
     place(this.panels.perf, new THREE.Vector3(-half - 0.11, 0.02, half - 0.06), "tilt");
-    place(this.panels.menu, new THREE.Vector3(half + 0.13, 0.16, half - 0.12), "player");
+    // Behind and above the slab, so the open card never stands between the eyes (or a ray) and the slab's Menu button.
+    place(this.panels.menu, new THREE.Vector3(half + 0.15, 0.22, half - 0.2), "player");
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
+    // On the player's edge of the board, low: in poke reach, clear of the far rank where the pawn stands.
+    place(this.panels.promote, new THREE.Vector3(0, 0.07, half + 0.05), "player");
+    place(this.panels.share, new THREE.Vector3(0, 0.2, 0), "player");
   }
 }
 

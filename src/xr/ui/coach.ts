@@ -9,13 +9,13 @@ const COPY: Record<Pointer, Record<Exclude<CoachStep, "none">, string>> = {
     "find-table": "Look at your table",
     place: "Pinch to place",
     "first-move": "Pinch a soldier, drop on a glow",
-    "two-hands": "Two hands: move · resize",
+    "two-hands": "Pinch both board edges: move · resize",
   },
   controllers: {
     "find-table": "Look at your table",
     place: "Trigger to place",
     "first-move": "Trigger a soldier, then a glow",
-    "two-hands": "Both grips: move · resize",
+    "two-hands": "Both grips at board: move · resize",
   },
 };
 

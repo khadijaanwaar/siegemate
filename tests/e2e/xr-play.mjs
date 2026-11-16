@@ -6,7 +6,7 @@
 //
 //   node tests/e2e/xr-play.mjs [--headed]
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -45,7 +45,7 @@ try {
   await page.waitForTimeout(500);
   const placingUi = await page.evaluate(() => window.__xr.ui());
   check(placingUi.coach === "find-table" && placingUi.panels.includes("coach"), "the coach asks for a table while placing", JSON.stringify(placingUi));
-  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 20000 }).catch(() => undefined);
   const state = await page.evaluate(() => ({ state: window.__xr.state(), placement: window.__xr.placement() }));
   check(state.state === "playing" && state.placement === "fallback", "board falls back to seat height", JSON.stringify(state));
   // The frame must be drawn from the headset, not from the desktop camera metres away.
@@ -144,7 +144,9 @@ try {
 
   // ---- the menu: pick Squire and start a new game from the headset.
   check(await page.evaluate(() => window.__xr.press("menu")), "Menu opens", "");
-  check((await page.evaluate(() => window.__xr.ui())).panels.includes("menu"), "the menu card shows", "");
+  const menuUi = await page.evaluate(() => window.__xr.ui());
+  check(menuUi.panels.includes("menu"), "the menu card shows", "");
+  check(menuUi.menu?.strength === "easy" && menuUi.menu?.side === "w", "the menu opens on the game's own strength and side", JSON.stringify(menuUi.menu));
   await page.evaluate(() => window.__xr.press("easy"));
   await page.evaluate(() => window.__xr.press("new"));
   await page.waitForTimeout(800);
@@ -153,46 +155,197 @@ try {
   check(!fresh.ui.panels.includes("menu"), "the menu closes after New game", JSON.stringify(fresh.ui));
   const onboarded = await page.evaluate(() => localStorage.getItem("mr-chess:onboarded"));
 
-  // ---- two hands pinch away from the figures and pull apart: the board grows.
+  // ---- the menu: ▲ raises the board 2 cm a press (remembered), ▼ lowers it; Sound and Music
+  // switch the game's own settings, so the choice outlives the session.
+  const press = (id) => page.evaluate((b) => window.__xr.press(b), id);
+  await press("menu");
+  const yBefore = (await page.evaluate(() => window.__xr.sizes())).rigAt[1];
+  await press("raise");
+  await press("raise");
+  const raised = await page.evaluate(() => ({
+    height: window.__xr.boardHeight(),
+    y: window.__xr.sizes().rigAt[1],
+    stored: localStorage.getItem("mr-chess:board-height"),
+  }));
+  check(
+    Math.abs(raised.height - 0.04) < 1e-6 && Math.abs(raised.y - yBefore - 0.04) < 0.011 && raised.stored === "0.040",
+    "▲ twice raises the board 4 cm and remembers it",
+    JSON.stringify({ yBefore, ...raised }),
+  );
+  await press("lower");
+  await press("lower");
+  check(Math.abs(await page.evaluate(() => window.__xr.boardHeight())) < 1e-6, "▼ twice brings it back", "");
+  await press("sound");
+  await page.waitForTimeout(150);
+  const soundOff = await page.evaluate(() => window.__xr.audio());
+  await press("music");
+  await page.waitForTimeout(150);
+  const musicOff = await page.evaluate(() => window.__xr.audio());
+  check(soundOff.muted === true && musicOff.music === false, "Sound and Music in the headset menu switch the game's settings", JSON.stringify({ soundOff, musicOff }));
+  await press("sound");
+  await press("music");
+  await page.waitForTimeout(150);
+  const soundBack = await page.evaluate(() => window.__xr.audio());
+  check(soundBack.muted === false && soundBack.music === true, "and back on", JSON.stringify(soundBack));
+  await press("menu"); // close
+
+  // ---- a fingertip held just off the slab's Menu button (in the poke volume, not touching)
+  // blips once as it arrives, never every frame.
+  await page.evaluate(() => {
+    const hand = window.__iwer.hands.right;
+    hand.quaternion.set(0, 0, 0, 1);
+    hand.poseId = "point";
+    hand.position.set(3, 1.2, 2);
+  });
+  await page.waitForTimeout(300);
+  const tipOffset = await page.evaluate(() => {
+    const hand = window.__iwer.hands.right.position;
+    const tip = window.__xr.pinch("right").tip;
+    return { x: tip[0] - hand.x, y: tip[1] - hand.y, z: tip[2] - hand.z };
+  });
+  const menuButton = await page.evaluate(() => window.__xr.buttonWorld("menu"));
+  // The slab lies tilted back 0.9 rad on a board facing the player (yaw 0): its face points up and toward them.
+  const hoverAt = { x: menuButton.x, y: menuButton.y + Math.sin(0.9) * 0.025, z: menuButton.z + Math.cos(0.9) * 0.025 };
+  const blipsBefore = await page.evaluate(() => window.__xr.hoverBlips());
+  await page.evaluate(
+    (p) => window.__iwer.hands.right.position.set(p.x, p.y, p.z),
+    { x: hoverAt.x - tipOffset.x, y: hoverAt.y - tipOffset.y, z: hoverAt.z - tipOffset.z },
+  );
+  await page.waitForTimeout(600);
+  const hoverBlips = (await page.evaluate(() => window.__xr.hoverBlips())) - blipsBefore;
+  const stillClosed = !(await page.evaluate(() => window.__xr.ui())).panels.includes("menu");
+  check(hoverBlips === 1 && stillClosed, "a fingertip hovering 2.5 cm off a button blips once, not every frame, and presses nothing", `${hoverBlips} blips`);
+  await page.evaluate(() => {
+    const hand = window.__iwer.hands.right;
+    hand.position.set(3, 1.2, 2);
+    hand.poseId = "open";
+  });
+  await page.waitForTimeout(300);
+
+  // ---- two hands pinch beside the board, together, and pull apart: the board grows.
+  // Pinched high above it they are not a grab (a pinch has to close within 10 cm of the board).
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
   await page.evaluate(() => {
-    const { left, right } = window.__iwer.hands;
-    for (const hand of [left, right]) {
-      hand.quaternion.set(0, 0, 0, 1);
-      hand.poseId = "open";
+    const left = window.__iwer.hands.left;
+    left.quaternion.set(0, 0, 0, 1);
+    left.position.set(-3, 1.2, 2);
+    left.poseId = "pinch";
+  });
+  await page.waitForTimeout(400);
+  const leftOffset = await page.evaluate(() => {
+    const hand = window.__iwer.hands.left.position;
+    const pinch = window.__xr.pinch("left");
+    return { x: pinch.x - hand.x, y: pinch.y - hand.y, z: pinch.z - hand.z };
+  });
+  const offsets = { left: leftOffset, right: calibration.offset };
+  const edges = await page.evaluate(() => {
+    const mid = (a, b) => {
+      const p = window.__xr.squareWorld(a);
+      const q = window.__xr.squareWorld(b);
+      return { x: (p.x + q.x) / 2, y: p.y, z: (p.z + q.z) / 2 };
+    };
+    return { a: mid("a4", "a5"), h: mid("h4", "h5") };
+  });
+  // About 2.5 cm outside the a and h edges, 3 cm above the tiles: no figure in reach, the rays off the board.
+  const pinchAt = (side, x, y, z) => ({ x: x - offsets[side].x, y: y - offsets[side].y, z: z - offsets[side].z });
+  const twoHandSpread = async (lift, steps, each) => {
+    await page.evaluate(() => {
+      for (const hand of [window.__iwer.hands.left, window.__iwer.hands.right]) {
+        hand.quaternion.set(0, 0, 0, 1);
+        hand.poseId = "open";
+      }
+    });
+    const place = (spread) =>
+      page.evaluate(
+        ({ l, r }) => {
+          window.__iwer.hands.left.position.set(l.x, l.y, l.z);
+          window.__iwer.hands.right.position.set(r.x, r.y, r.z);
+        },
+        {
+          l: pinchAt("left", edges.a.x - 0.1 - spread, edges.a.y + lift, edges.a.z),
+          r: pinchAt("right", edges.h.x + 0.1 + spread, edges.h.y + lift, edges.h.z),
+        },
+      );
+    await place(0);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      window.__iwer.hands.left.poseId = "pinch";
+      window.__iwer.hands.right.poseId = "pinch";
+    });
+    await page.waitForTimeout(300);
+    for (let step = 1; step <= steps; step += 1) {
+      await place(step * each);
+      await page.waitForTimeout(40);
     }
-    // Well above the board, out to the sides: no figure in reach.
-    left.position.set(-0.15, 1.45, -0.35);
-    right.position.set(0.15, 1.45, -0.35);
-  });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => {
-    window.__iwer.hands.left.poseId = "pinch";
-    window.__iwer.hands.right.poseId = "pinch";
-  });
-  await page.waitForTimeout(300);
-  for (let step = 1; step <= 8; step += 1) {
-    await page.evaluate((spread) => {
-      window.__iwer.hands.left.position.set(-0.15 - spread, 1.45, -0.35);
-      window.__iwer.hands.right.position.set(0.15 + spread, 1.45, -0.35);
-    }, step * 0.01);
-    await page.waitForTimeout(40);
-  }
-  const sizeDuring = await page.evaluate(() => window.__xr.boardSize());
-  await page.evaluate(() => {
-    window.__iwer.hands.left.poseId = "open";
-    window.__iwer.hands.right.poseId = "open";
-  });
-  await page.waitForTimeout(300);
+    const size = await page.evaluate(() => window.__xr.boardSize());
+    await page.evaluate(() => {
+      window.__iwer.hands.left.poseId = "open";
+      window.__iwer.hands.right.poseId = "open";
+    });
+    await page.waitForTimeout(300);
+    return size;
+  };
+  const sizeHigh = await twoHandSpread(0.5, 10, 0.015);
+  check(sizeHigh === sizeBefore, "two pinches high above the board do not resize it", `${sizeBefore} -> ${sizeHigh}`);
+  const sizeDuring = await twoHandSpread(0.03, 10, 0.015);
   const stored = await page.evaluate(() => localStorage.getItem("mr-chess:board-size"));
   check(sizeDuring > sizeBefore * 1.15, "pulling two pinched hands apart grows the board", `${sizeBefore} -> ${sizeDuring}`);
   check(stored !== null && Math.abs(Number(stored) - sizeDuring) < 0.01, "the new size is remembered", String(stored));
 
+  // ---- a new game as black from the headset: black's army is the near one.
+  const nearest = () =>
+    page.evaluate(() => {
+      const head = window.__xr.sizes().head;
+      const reach = (square) => {
+        const p = window.__xr.squareWorld(square);
+        return Math.hypot(p.x - head[0], p.z - head[2]);
+      };
+      return { e2: reach("e2"), e7: reach("e7") };
+    });
+  const asWhite = await nearest();
+  check(asWhite.e2 < asWhite.e7, "playing white, white's army is the near one", JSON.stringify(asWhite));
+  await page.evaluate(() => window.__xr.press("menu"));
+  await page.evaluate(() => window.__xr.press("side-b"));
+  await page.evaluate(() => window.__xr.press("new"));
+  await page.waitForTimeout(800);
+  const asBlack = await nearest();
+  const blackGame = await page.evaluate(() => window.__xr.snapshot().playerColor);
+  check(blackGame === "b" && asBlack.e7 < asBlack.e2, "playing black, the board turns so black's army is the near one", JSON.stringify({ blackGame, ...asBlack }));
+
+  // ---- the player turns and steps aside, then recentres (the Meta button): the world's
+  // origin jumps to them, and the board must keep its place relative to them.
+  await page.evaluate(() => {
+    const device = window.__iwer;
+    device.position.set(device.position.x + 0.4, device.position.y, device.position.z + 0.2);
+    device.quaternion.set(0, Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)); // 30 degrees to the left
+  });
+  await page.waitForTimeout(300);
+  const flat = (s) => Math.hypot(s.rigAt[0] - s.head[0], s.rigAt[2] - s.head[2]);
+  const beforeRecenter = await page.evaluate(() => window.__xr.sizes());
+  await page.evaluate(() => window.__iwer.recenter());
+  await page.waitForTimeout(400);
+  const afterRecenter = await page.evaluate(() => window.__xr.sizes());
+  check(
+    Math.abs(flat(afterRecenter) - flat(beforeRecenter)) < 0.03 && afterRecenter.rigAt[2] < afterRecenter.head[2] && afterRecenter.rigVisible,
+    "after a recentre the board stays where it was relative to the player",
+    JSON.stringify({ before: [beforeRecenter.head, beforeRecenter.rigAt], after: [afterRecenter.head, afterRecenter.rigAt] }),
+  );
+
+  // ---- quitting through the Quest menu: the menu blurs the session (the match pauses),
+  // then the system ends it. The 2D game must carry on, not stay paused for good.
+  await page.evaluate(() => window.__iwer.updateVisibilityState("visible-blurred"));
+  await page.waitForFunction(() => window.__xr.snapshot().paused, null, { timeout: 3000 }).catch(() => undefined);
+  check(await page.evaluate(() => window.__xr.snapshot().paused), "the system menu pauses the match", "");
+  await page.evaluate(() => window.__iwer.activeSession.end());
+  await page.waitForFunction(() => window.__xr.state() === "off", null, { timeout: 5000 }).catch(() => undefined);
+  const quit = await page.evaluate(() => ({ state: window.__xr.state(), paused: window.__xr.snapshot().paused, status: window.__xr.snapshot().status }));
+  check(quit.state === "off" && quit.paused === false && quit.status === "playing", "quitting through the system menu hands back a running 2D game", JSON.stringify(quit));
+
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-play.png") });
-  console.log(`     screenshot: ${join(out, "xr-play.png")}`);
   await browser.close();
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);

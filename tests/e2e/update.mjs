@@ -4,7 +4,7 @@
 //
 //   node tests/e2e/update.mjs
 import { execFileSync } from "node:child_process";
-import { createReadStream, existsSync, mkdtempSync, statSync } from "node:fs";
+import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
@@ -61,5 +61,6 @@ try {
   await browser.close();
 } finally {
   server.close();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);

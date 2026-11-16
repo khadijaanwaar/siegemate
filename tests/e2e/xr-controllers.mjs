@@ -5,9 +5,10 @@
 //
 //   node tests/e2e/xr-controllers.mjs [--headed]
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Chess } from "chess.js";
 import { chromium } from "playwright";
 
 import { takeGpuLock } from "../../tools/gpu-lock.mjs";
@@ -57,7 +58,7 @@ try {
   await page.evaluate(() => (window.__iwer.primaryInputMode = "controller"));
 
   await page.evaluate(() => window.__xr.enter());
-  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 20000 }).catch(() => undefined);
   await page.waitForTimeout(600);
   const ui = await page.evaluate(() => window.__xr.ui());
   check(ui?.pointer === "controllers" && ui.coach === "first-move", "with controllers in hand the coach speaks of the trigger", JSON.stringify(ui));
@@ -76,6 +77,16 @@ try {
     );
   };
   const trigger = (value) => page.evaluate((v) => window.__iwer.controllers.right.updateButtonValue("trigger", v), value);
+  // A click: the trigger goes down and comes back up, each held until a headset
+  // frame has read it. A loaded machine can stall the frame loop for seconds,
+  // and a press shorter than the stall would never be seen at all.
+  const pull = async () => {
+    await trigger(1);
+    await page.waitForFunction(() => window.__xr.pointer("right")?.trigger === true, null, { timeout: 10000 }).catch(() => undefined);
+    await page.waitForTimeout(150);
+    await trigger(0);
+    await page.waitForFunction(() => window.__xr.pointer("right")?.trigger === false, null, { timeout: 10000 }).catch(() => undefined);
+  };
   const squareTop = async (square, lift = 0) => {
     const p = await page.evaluate((s) => window.__xr.squareWorld(s), square);
     return { x: p.x, y: p.y + lift, z: p.z };
@@ -110,9 +121,7 @@ try {
   const click = async (square) => {
     await aim("right", from, await squareTop(square, square === "d2" ? 0.02 : 0));
     await page.waitForTimeout(200);
-    await trigger(1);
-    await page.waitForTimeout(150);
-    await trigger(0);
+    await pull();
     await page.waitForTimeout(250);
   };
   await click("d2");
@@ -120,6 +129,9 @@ try {
   await page.waitForFunction(() => window.__xr.snapshot().fen.split(" ")[0].split("/")[4] === "3PP3", null, { timeout: 5000 }).catch(() => undefined);
   const afterClicks = await page.evaluate(() => window.__xr.snapshot().fen);
   check(afterClicks.split(" ")[0].split("/")[4] === "3PP3", "click d2, then click d4, plays d2-d4", afterClicks);
+  // The machine's reply lands on its own clock: let it, so a changed position later is the panel's doing.
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen) && !window.__xr.snapshot().thinking, null, { timeout: 15000 }).catch(() => undefined);
+  await page.waitForTimeout(3000);
 
   // ---- the ray presses panel buttons: open the menu, close it.
   const pressAlongRay = async (id) => {
@@ -127,9 +139,7 @@ try {
     if (!at) return false;
     await aim("right", from, at);
     await page.waitForTimeout(200);
-    await trigger(1);
-    await page.waitForTimeout(150);
-    await trigger(0);
+    await pull();
     await page.waitForTimeout(300);
     return true;
   };
@@ -142,25 +152,85 @@ try {
   check(!menuClosed.ui?.panels.includes("menu"), "and closes it", JSON.stringify(menuClosed.ui));
   check(menuClosed.fen === fenBeforeClose, "a press on a panel never reaches the board behind it", menuClosed.fen);
 
-  // ---- both grips pull apart: the board grows and the size is kept.
+  // ---- A opens the menu, and A again closes it.
+  const pressA = async () => {
+    await page.evaluate(() => window.__iwer.controllers.right.updateButtonValue("a-button", 1));
+    await page.waitForTimeout(200);
+    await page.evaluate(() => window.__iwer.controllers.right.updateButtonValue("a-button", 0));
+    await page.waitForTimeout(200);
+  };
+  await pressA();
+  check((await page.evaluate(() => window.__xr.ui()))?.panels.includes("menu"), "A opens the menu", "");
+  await pressA();
+  check(!(await page.evaluate(() => window.__xr.ui()))?.panels.includes("menu"), "A again closes it", "");
+
+  // ---- promotion: a pawn on b7, b8 empty. Click b7, click b8: the crown card shows in the
+  // headset (no picker hangs in front of the desktop camera); its Knight button, pressed along
+  // the ray, crowns a knight and the game goes on.
+  const promo = new Chess();
+  // The black knight leaves b8 for a6, not c6: a knight on c6 stands in the
+  // ray from the player's seat to b7, and the press would land on the knight.
+  for (const san of ["a4", "b5", "axb5", "a6", "bxa6", "Bb7", "axb7", "Na6"]) promo.move(san);
+  const save = {
+    version: 1,
+    options: { mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null },
+    pgn: promo.pgn(),
+    fen: promo.fen(),
+    clock: { whiteMs: 0, blackMs: 0 },
+    savedAt: Date.now(),
+  };
+  // Let the machine's reply to d4 land (and its march finish) before the board is swapped.
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen) && !window.__xr.snapshot().thinking, null, { timeout: 15000 }).catch(() => undefined);
+  await page.waitForTimeout(3000);
+  check(await page.evaluate((s) => window.__xr.resume(s), save), "a position one step from the crown stands up", promo.fen());
+  await page.waitForTimeout(2500); // the board rebuilds
+  await click("b7");
+  await click("b8");
+  await page.waitForTimeout(400);
+  const asking = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
+  check(asking.ui?.panels.includes("promote"), "reaching the last rank shows the crown card in the headset", JSON.stringify(asking.ui));
+  check(asking.fen === promo.fen(), "the pawn waits for the choice", asking.fen);
+  await pressAlongRay("promote-n");
+  await page.waitForFunction(() => window.__xr.snapshot().fen.startsWith("rN1qkbnr"), null, { timeout: 5000 }).catch(() => undefined);
+  const crowned = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
+  check(crowned.fen.startsWith("rN1qkbnr"), "pressing Knight on the card crowns a knight on b8", crowned.fen);
+  check(!crowned.ui?.panels.includes("promote"), "and the card goes away", JSON.stringify(crowned.ui));
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen), null, { timeout: 15000 }).catch(() => undefined);
+  check(/ w /.test(await page.evaluate(() => window.__xr.snapshot().fen)), "the machine replies after the crown", "");
+  await page.waitForTimeout(3000); // let the reply's march finish
+
+  // ---- both grips close beside the board and pull apart: the board grows and the size is kept.
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
-  await page.evaluate(() => {
-    const { left, right } = window.__iwer.controllers;
-    for (const controller of [left, right]) controller.quaternion.set(0, 0, 0, 1);
-    left.position.set(-0.15, 1.45, -0.35);
-    right.position.set(0.15, 1.45, -0.35);
+  const edges = await page.evaluate(() => {
+    const mid = (a, b) => {
+      const p = window.__xr.squareWorld(a);
+      const q = window.__xr.squareWorld(b);
+      return { x: (p.x + q.x) / 2, y: p.y, z: (p.z + q.z) / 2 };
+    };
+    return { a: mid("a4", "a5"), h: mid("h4", "h5") };
   });
+  // About 2.5 cm outside the a and h edges, 3 cm above the tiles (a grab must close within 10 cm of the board).
+  const placeGrips = (spread) =>
+    page.evaluate(
+      ({ edges, spread }) => {
+        const { left, right } = window.__iwer.controllers;
+        left.position.set(edges.a.x - 0.1 - spread, edges.a.y + 0.03, edges.a.z);
+        right.position.set(edges.h.x + 0.1 + spread, edges.h.y + 0.03, edges.h.z);
+      },
+      { edges, spread },
+    );
+  await page.evaluate(() => {
+    for (const controller of [window.__iwer.controllers.left, window.__iwer.controllers.right]) controller.quaternion.set(0, 0, 0, 1);
+  });
+  await placeGrips(0);
   await page.waitForTimeout(250);
   await page.evaluate(() => {
     window.__iwer.controllers.left.updateButtonValue("squeeze", 1);
     window.__iwer.controllers.right.updateButtonValue("squeeze", 1);
   });
   await page.waitForTimeout(250);
-  for (let step = 1; step <= 8; step += 1) {
-    await page.evaluate((spread) => {
-      window.__iwer.controllers.left.position.set(-0.15 - spread, 1.45, -0.35);
-      window.__iwer.controllers.right.position.set(0.15 + spread, 1.45, -0.35);
-    }, step * 0.01);
+  for (let step = 1; step <= 10; step += 1) {
+    await placeGrips(step * 0.015);
     await page.waitForTimeout(40);
   }
   const sizeDuring = await page.evaluate(() => window.__xr.boardSize());
@@ -179,10 +249,42 @@ try {
   const handsAgain = await page.evaluate(() => ({ side: window.__xr.pointer("right"), ui: window.__xr.ui() }));
   check(handsAgain.side?.kind === "hand" && handsAgain.ui?.pointer === "hands", "putting the controllers down hands over to hand tracking", JSON.stringify(handsAgain));
 
+  // ---- the thumbstick raises and lowers the board, a step per push.
+  await page.evaluate(() => (window.__iwer.primaryInputMode = "controller"));
+  await page.waitForTimeout(400);
+  const stick = async (y) => {
+    await page.evaluate((v) => window.__iwer.controllers.right.updateAxes("thumbstick", 0, v), y);
+    await page.waitForTimeout(120);
+    await page.evaluate(() => window.__iwer.controllers.right.updateAxes("thumbstick", 0, 0));
+    await page.waitForTimeout(120);
+  };
+  const heightBefore = await page.evaluate(() => window.__xr.boardHeight());
+  await stick(-1);
+  await stick(-1);
+  const stickUp = await page.evaluate(() => window.__xr.boardHeight());
+  await stick(1);
+  await stick(1);
+  const stickDown = await page.evaluate(() => window.__xr.boardHeight());
+  check(Math.abs(stickUp - heightBefore - 0.04) < 1e-6 && Math.abs(stickDown - heightBefore) < 1e-6, "thumbstick up raises the board 2 cm a push, down lowers it", JSON.stringify({ heightBefore, stickUp, stickDown }));
+
+  // ---- Exit asks first: one tap arms it, it disarms after 3 s, and two taps leave.
+  await page.evaluate(() => window.__xr.press("menu"));
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForTimeout(300);
+  check((await page.evaluate(() => window.__xr.state())) === "playing", "one tap on Exit does not leave", "");
+  await page.waitForTimeout(3200);
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForTimeout(300);
+  check((await page.evaluate(() => window.__xr.state())) === "playing", "a tap after the confirm window lapsed only arms it again", "");
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForFunction(() => window.__xr.state() === "off", null, { timeout: 5000 }).catch(() => undefined);
+  check((await page.evaluate(() => window.__xr.state())) === "off", "a second tap within 3 s leaves", "");
+
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-controllers.png") });
   await browser.close();
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);

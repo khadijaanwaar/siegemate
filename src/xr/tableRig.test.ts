@@ -41,6 +41,45 @@ describe("TableRig", () => {
     expect(back.distanceTo(local)).toBeLessThan(1e-6);
   });
 
+  it("tells how far along a ray the board's top is, and misses off its edge or pointing away", () => {
+    const rig = new TableRig();
+    rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0.4);
+    const top = 0.75 + BOARD_DEPTH_UNITS * TABLE_SCALE;
+    const down = new THREE.Vector3(0, -1, 0);
+    const onBoard = rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0.05, 1.2, -0.45), down), 4.92);
+    expect(onBoard).toBeCloseTo(1.2 - top, 6);
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0.6, 1.2, -0.45), down), 4.92)).toBeNull();
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0, 1.2, -0.45), new THREE.Vector3(0, 1, 0)), 4.92)).toBeNull();
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0, 1.2, 0), new THREE.Vector3(0, 0, -1)), 4.92)).toBeNull();
+  });
+
+  it("turns the board about its centre so black's army is the near one", () => {
+    const rig = new TableRig();
+    rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0);
+    const near = (square: string) => rig.toWorld(squareToWorld(square), new THREE.Vector3()).z;
+    expect(near("e2")).toBeGreaterThan(near("e7"));
+    rig.setFlipped(true);
+    expect(rig.flipped).toBe(true);
+    expect(near("e7")).toBeGreaterThan(near("e2"));
+    // a8 sits on black's near right, as across a real board.
+    const a8 = rig.toWorld(squareToWorld("a8"), new THREE.Vector3());
+    expect(a8.x).toBeGreaterThan(0);
+    expect(a8.z).toBeGreaterThan(-0.45);
+    rig.setFlipped(false);
+    expect(near("e2")).toBeGreaterThan(near("e7"));
+  });
+
+  it("measures how far a hand is from the board", () => {
+    const rig = new TableRig();
+    rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0);
+    const top = 0.75 + BOARD_DEPTH_UNITS * TABLE_SCALE;
+    const half = 4.92 * TABLE_SCALE;
+    expect(rig.distanceToBoard(new THREE.Vector3(0.1, top + 0.05, -0.45), 4.92)).toBeCloseTo(0.05, 6);
+    expect(rig.distanceToBoard(new THREE.Vector3(half + 0.04, top, -0.45), 4.92)).toBeCloseTo(0.04, 6);
+    expect(rig.distanceToBoard(new THREE.Vector3(0, 0.77, -0.45), 4.92)).toBe(0);
+    expect(rig.distanceToBoard(new THREE.Vector3(0, top + 0.5, -0.45), 4.92)).toBeCloseTo(0.5, 6);
+  });
+
   it("clamps the size the player can pinch it to", () => {
     const rig = new TableRig();
     expect(rig.setScale(3)).toBe(1.6);
