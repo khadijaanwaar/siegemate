@@ -48,6 +48,11 @@ try {
   const fresh = (after, before) => after.filter((id) => !before.includes(id));
   const settle = () => page.waitForFunction(() => window.__scene.moving() === 0, null, { timeout: 30000 });
 
+  // A gesture unlocks the mixer, so the table's audio path (table mix,
+  // score prefetch, session visibility) runs too.
+  await page.mouse.click(4, 4);
+  await page.waitForTimeout(500);
+
   // ---- enter, two players at one table: the hotseat lets one script play both sides.
   const in2d = await programIds();
   await page.evaluate(() => window.__xr.enter({ mode: "hotseat" }));
@@ -96,6 +101,14 @@ try {
   await page.waitForTimeout(1500);
   await page.evaluate(() => window.__xr.press("menu"));
   report.arenaSwitch = { programs: fresh(await programIds(), beforeArena).length, room: await page.evaluate(() => window.__xr.room()), ms: Date.now() - arenaStart };
+  check(report.arenaSwitch.programs === 0, "switching battleground on the table compiles nothing", JSON.stringify(report.arenaSwitch));
+
+  // ---- leave: the hall comes back with the new battleground's probe.
+  await page.evaluate(() => window.__xr.exit());
+  await page.waitForFunction(() => window.__xr.state() === "off", null, { timeout: 10000 }).catch(() => undefined);
+  await page.waitForTimeout(1500);
+  const after = await page.evaluate(() => ({ state: window.__xr.state(), calls: window.__scene.breakdown().calls }));
+  check(after.state === "off" && after.calls > 0, "leaving the table draws the hall again", JSON.stringify(after));
 
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   console.log(JSON.stringify(report));
