@@ -131,7 +131,8 @@ export class CanvasPanel {
     if (this.pressedId && now >= this.pressedUntil) {
       this.pressedId = null;
       if (this.mesh.visible) this.redraw(now);
-    } else if (this.animated && this.mesh.visible && now - this.drawnAt >= 1 / ANIMATE_HZ) {
+    } else if (this.animated && this.mesh.visible && (now < this.drawnAt || now - this.drawnAt >= 1 / ANIMATE_HZ)) {
+      // (`now < drawnAt`: a redraw stamped from another clock must never freeze the glyph.)
       this.redraw(now);
     }
   }
