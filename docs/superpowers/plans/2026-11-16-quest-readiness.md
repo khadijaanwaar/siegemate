@@ -89,3 +89,10 @@ P1
 Pinch thresholds (15/25 mm) and the palm-normal joints; multiview on hardware; default board size 1.15 (5.75 cm
 squares) and placement reach 1.0 m; depth occlusion of real hands. Device checklist: `?debug` fps card, ≥72 fps
 during a capture, promote a pawn, recenter with the Meta button, quit through the system menu and come back.
+
+## Progress log
+
+- 2026-11-16: Lanes A (headset fixes), B (perf/comfort/audio + shader keeper: 0 compiles on every capture in the
+  emulator), C (sharing), D (film harness, drafts of shots a–g) and E (README/Devpost) merged. Crest-through-card fix,
+  MIT licence. Full suite green on main (unit 261; e2e offline, update, replay, xr-play, xr-controllers, xr-share,
+  xr-perf, perf-check). **Deployed 4350869** to https://siegemate.pages.dev (deployment fb8dfba6). Still emulator-only.
