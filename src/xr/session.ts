@@ -2,8 +2,9 @@
 
 /**
  * The mixed reality session: passthrough (`immersive-ar`) on the floor-level
- * reference space, with hands, hit-test, anchors and planes asked for but never
- * required, so a headset that lacks one still gets a working table.
+ * reference space, with hands and hit-test asked for but never required, so a
+ * headset that lacks one still gets a working table. Nothing else is asked
+ * for: every optional feature can add a permission prompt.
  *
  * Foveation and the framebuffer scale are set before the session starts (three
  * refuses a scale change once presenting), and the refresh rate goes to 72 Hz:
@@ -12,7 +13,7 @@
 
 export const TABLE_SESSION_INIT: XRSessionInit = {
   requiredFeatures: ["local-floor"],
-  optionalFeatures: ["hand-tracking", "hit-test", "anchors", "plane-detection"],
+  optionalFeatures: ["hand-tracking", "hit-test"],
 };
 
 export const TARGET_FRAME_RATE = 72;
@@ -37,8 +38,6 @@ export interface TableSession {
   readonly session: XRSession;
   readonly hasHitTest: boolean;
   readonly hasHands: boolean;
-  readonly hasAnchors: boolean;
-  readonly hasPlanes: boolean;
   /** `visible`, `visible-blurred` (system menu over us) or `hidden` (headset off). */
   onVisibility(callback: (state: XRVisibilityState) => void): () => void;
   /** `requestedByApp` is true only when {@link TableSession.end} ended it. */
@@ -100,8 +99,6 @@ export async function startTableSession(
     session,
     hasHitTest: granted(session, "hit-test"),
     hasHands: granted(session, "hand-tracking"),
-    hasAnchors: granted(session, "anchors"),
-    hasPlanes: granted(session, "plane-detection"),
     onVisibility(callback) {
       const listener = (): void => callback(session.visibilityState);
       session.addEventListener("visibilitychange", listener);

@@ -57,8 +57,6 @@ function fakeTable() {
     session: session as unknown as XRSession,
     hasHitTest: false,
     hasHands: true,
-    hasAnchors: false,
-    hasPlanes: false,
     onVisibility(callback) {
       visibility = callback;
       return () => {

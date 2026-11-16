@@ -72,13 +72,14 @@ describe("pickFrameRate", () => {
 });
 
 describe("startTableSession", () => {
-  it("asks for passthrough with hands, hit-test, anchors and planes as optional", async () => {
+  it("asks for passthrough with hands and hit-test as optional, and nothing it never uses", async () => {
     const session = new FakeSession(["local-floor", "hand-tracking", "hit-test"], [72, 90]);
     const xr = fakeXr(session);
     await startTableSession(fakeRenderer(), xr);
     expect(xr.requestSession).toHaveBeenCalledWith("immersive-ar", TABLE_SESSION_INIT);
     expect(TABLE_SESSION_INIT.requiredFeatures).toEqual(["local-floor"]);
-    expect(TABLE_SESSION_INIT.optionalFeatures).toEqual(["hand-tracking", "hit-test", "anchors", "plane-detection"]);
+    // Anchors and planes were asked for and never read; each one asked for can add a permission prompt.
+    expect(TABLE_SESSION_INIT.optionalFeatures).toEqual(["hand-tracking", "hit-test"]);
   });
 
   it("sets foveation and framebuffer scale before the session, then 72 Hz", async () => {
