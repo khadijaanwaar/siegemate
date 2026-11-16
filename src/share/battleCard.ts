@@ -160,8 +160,8 @@ function drawBoard(ctx: CanvasRenderingContext2D, game: ReplayGame): void {
  */
 function drawFigure(ctx: CanvasRenderingContext2D, kind: PieceKind, color: Faction, x: number, y: number, size: number): void {
   ctx.save();
-  ctx.translate(x + size * 0.07, y + size * 0.06);
-  ctx.scale((size * 0.86) / 100, (size * 0.86) / 100);
+  ctx.translate(x + size * 0.01, y + size * 0.03);
+  ctx.scale((size * 0.98) / 100, (size * 0.98) / 100);
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
