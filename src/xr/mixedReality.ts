@@ -8,7 +8,18 @@ import type { SquareId } from "../core/types";
 import { buttonPressed, PressTracker, PRIMARY, pulse, SQUEEZE, TRIGGER } from "./controllers";
 import { palmFacesHead, palmNormal, PinchTracker, type PinchEvent } from "./hands";
 import { Markers } from "./markers";
-import { loadBoardSize, pastDeadZone, saveBoardSize, TWO_HAND_REACH_M, TWO_HAND_SYNC_S, twoHandTransform, type TwoHandStart } from "./manipulate";
+import {
+  loadBoardHeight,
+  loadBoardSize,
+  nudgeHeight,
+  pastDeadZone,
+  saveBoardHeight,
+  saveBoardSize,
+  TWO_HAND_REACH_M,
+  TWO_HAND_SYNC_S,
+  twoHandTransform,
+  type TwoHandStart,
+} from "./manipulate";
 import { GRAB_RADIUS_M, HandOrders } from "./orders";
 import { Placement, reanchorToHead, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
@@ -28,6 +39,8 @@ export interface MixedRealityHooks {
   onFocus?: (focused: boolean) => void;
   /** The player picked another battleground in the headset (board, music and room follow). */
   onArena?: (theme: ArenaTheme) => void;
+  /** The player turned sound or music on or off in the headset menu (the 2D settings follow). */
+  onSound?: (change: { sound?: boolean; music?: boolean }) => void;
 }
 
 /** The board base's half width in game units, with its trim (matches the UI layout). */
@@ -62,6 +75,8 @@ interface HandSlot {
   grip: PressTracker;
   /** A / X: opens and closes the menu. */
   menuButton: PressTracker;
+  /** Thumbstick up or down raises or lowers the board: when it may step again, or null once it is back at rest. */
+  stickNextAt: number | null;
   orders: HandOrders;
   /** This press started on a panel: it belongs to the panel until it lets go. */
   panelPinch: boolean;
@@ -103,6 +118,13 @@ export class MixedReality {
   private twoHandMoving = false;
   /** The reference space was reset since the last frame (the Meta button). */
   private recentered = false;
+  /** Sound and music as the 2D settings have them (see {@link setSound}). */
+  private sound = { sound: true, music: true };
+  /** The height of the surface the board was placed on; the board stands {@link heightOffset} above it. */
+  private surfaceY = 0;
+  /** How far the player raised (or lowered) the board from where it was placed, remembered between sessions. */
+  private heightOffset = loadBoardHeight(safeStorage());
+  private readonly scratchPose = new THREE.Vector3();
   /** False while the system menu is over the session or the headset is off (what {@link MixedRealityHooks.onFocus} last said). */
   private focused = true;
   private readonly unsubscribe: (() => void)[] = [];
@@ -139,6 +161,7 @@ export class MixedReality {
         trigger: new PressTracker(),
         grip: new PressTracker(),
         menuButton: new PressTracker(),
+        stickNextAt: null,
         orders: new HandOrders(engine),
         panelPinch: false,
         kind: null,
@@ -161,12 +184,29 @@ export class MixedReality {
       promote: (kind) => {
         this.engine.choosePromotion(kind);
       },
+      sound: () => this.sound,
+      setSound: (change) => {
+        this.sound = { ...this.sound, ...change };
+        this.hooks.onSound?.(change);
+      },
+      height: () => this.heightOffset,
+      nudgeHeight: (direction) => this.nudgeHeight(direction),
     });
     this.rig.setScale(loadBoardSize(safeStorage()));
   }
 
   get current(): MixedRealityState {
     return this.state;
+  }
+
+  /** The 2D settings' sound and music, shown (and toggled) in the headset menu. */
+  setSound(sound: { sound: boolean; music: boolean }): void {
+    this.sound = { ...sound };
+  }
+
+  /** The board's height above (or below) where it was placed, in metres. */
+  get boardHeight(): number {
+    return this.heightOffset;
   }
 
   get placementState(): string {
@@ -420,8 +460,8 @@ export class MixedReality {
 
     const pose = this.placement.pose;
     if (this.placement.state === "aiming" && pose) {
-      // The real board previews where it would go.
-      this.rig.setPose(pose.position, pose.yaw);
+      // The real board previews where it would go (at the height the player keeps it).
+      this.rig.setPose(this.scratchPose.copy(pose.position).setY(pose.position.y + this.heightOffset), pose.yaw);
       this.rig.root.visible = true;
       this.markers.showPlacement(pose.position);
     } else if (this.placement.state === "fallback" && pose) {
@@ -433,7 +473,8 @@ export class MixedReality {
   }
 
   private settle(position: THREE.Vector3, yaw: number, plinth: boolean): void {
-    this.rig.setPose(position, yaw);
+    this.surfaceY = position.y;
+    this.rig.setPose(this.scratchPose.copy(position).setY(position.y + this.heightOffset), yaw);
     this.rig.showPlinth(plinth);
     this.rig.root.visible = true;
     this.markers.showPlacement(null);
@@ -507,6 +548,7 @@ export class MixedReality {
           this.ui.toggleMenu();
           pulse(source, 0.25, 15);
         }
+        this.readThumbstick(slot, source, now);
       }
 
       if (event === "start" && this.confirmPlacement()) {
@@ -635,8 +677,36 @@ export class MixedReality {
       this.rig.setScale(next.scale);
     } else if (this.twoHand) {
       this.twoHand = null;
+      // Carried up or down on the stand-in plinth: the height steps start from here.
+      this.surfaceY = this.rig.root.position.y - this.heightOffset;
       saveBoardSize(safeStorage(), this.rig.scaleMultiplier);
     }
+  }
+
+  /**
+   * Thumbstick up raises the board a step, down lowers it: once on the push,
+   * then again every 0.2 s while held (after a 0.4 s pause), like a key.
+   */
+  private readThumbstick(slot: HandSlot, source: XRInputSource, now: number): void {
+    const y = source.gamepad?.axes[3] ?? 0;
+    if (Math.abs(y) < 0.3) {
+      slot.stickNextAt = null;
+      return;
+    }
+    if (Math.abs(y) < 0.7 || this.state !== "playing") return;
+    if (slot.stickNextAt !== null && now < slot.stickNextAt) return;
+    slot.stickNextAt = now + (slot.stickNextAt === null ? 0.4 : 0.2);
+    // Pushed away (negative y) is up.
+    this.nudgeHeight(y < 0 ? 1 : -1);
+  }
+
+  /** Raises (1) or lowers (-1) the board one step from where it was placed, and remembers the height. */
+  private nudgeHeight(direction: 1 | -1): void {
+    if (this.state !== "playing") return;
+    this.heightOffset = nudgeHeight(this.heightOffset, direction);
+    this.rig.root.position.y = this.surfaceY + this.heightOffset;
+    this.rig.root.updateMatrixWorld(true);
+    saveBoardHeight(safeStorage(), this.heightOffset);
   }
 
   /** A side's hold point, noting when the hold closed and whether it closed on the board. */
@@ -758,6 +828,7 @@ export class MixedReality {
     this.twoHand = null;
     const pose = reanchorToHead({ position: this.rig.root.position.clone(), yaw: this.rig.root.rotation.y }, before, this.head);
     this.rig.setPose(pose.position, pose.yaw);
+    this.surfaceY = pose.position.y - this.heightOffset;
   }
 
   private setFocused(focused: boolean): void {

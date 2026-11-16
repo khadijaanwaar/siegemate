@@ -313,6 +313,32 @@ function button(input: FakeInput, index: number, pressed: boolean): void {
   (input.source.gamepad as unknown as { buttons: { pressed: boolean }[] }).buttons[index].pressed = pressed;
 }
 
+describe("MixedReality board height", () => {
+  it("thumbstick up raises the board 2 cm a step, repeating while held; down lowers it", async () => {
+    const { mixed, engine, table } = await playing();
+    const right = fakeInput("right", "controller");
+    right.aim(new THREE.Vector3(0.2, 1.1, -0.2), new THREE.Vector3(1, 0, 0));
+    engine.setInputs([right], table);
+    const stick = (y: number) => {
+      (right.source.gamepad as unknown as { axes: number[] }).axes[3] = y;
+    };
+    const heightAt = () => mixed.debugSizes().rigAt as number[];
+    stick(-1);
+    engine.frame(9);
+    expect(heightAt()[1]).toBeCloseTo(0.82, 6);
+    engine.frame(9.2);
+    expect(heightAt()[1]).toBeCloseTo(0.82, 6);
+    engine.frame(9.45);
+    expect(heightAt()[1]).toBeCloseTo(0.84, 6);
+    stick(0);
+    engine.frame(9.5);
+    stick(1);
+    engine.frame(9.55);
+    expect(heightAt()[1]).toBeCloseTo(0.82, 6);
+    expect(mixed.boardHeight).toBeCloseTo(0.02, 9);
+  });
+});
+
 describe("MixedReality controllers", () => {
   it("A or X opens the menu, once per press", async () => {
     const { engine, table } = await playing();

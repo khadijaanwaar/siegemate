@@ -155,6 +155,40 @@ try {
   check(!fresh.ui.panels.includes("menu"), "the menu closes after New game", JSON.stringify(fresh.ui));
   const onboarded = await page.evaluate(() => localStorage.getItem("mr-chess:onboarded"));
 
+  // ---- the menu: ▲ raises the board 2 cm a press (remembered), ▼ lowers it; Sound and Music
+  // switch the game's own settings, so the choice outlives the session.
+  const press = (id) => page.evaluate((b) => window.__xr.press(b), id);
+  await press("menu");
+  const yBefore = (await page.evaluate(() => window.__xr.sizes())).rigAt[1];
+  await press("raise");
+  await press("raise");
+  const raised = await page.evaluate(() => ({
+    height: window.__xr.boardHeight(),
+    y: window.__xr.sizes().rigAt[1],
+    stored: localStorage.getItem("mr-chess:board-height"),
+  }));
+  check(
+    Math.abs(raised.height - 0.04) < 1e-6 && Math.abs(raised.y - yBefore - 0.04) < 0.011 && raised.stored === "0.040",
+    "▲ twice raises the board 4 cm and remembers it",
+    JSON.stringify({ yBefore, ...raised }),
+  );
+  await press("lower");
+  await press("lower");
+  check(Math.abs(await page.evaluate(() => window.__xr.boardHeight())) < 1e-6, "▼ twice brings it back", "");
+  await press("sound");
+  await page.waitForTimeout(150);
+  const soundOff = await page.evaluate(() => window.__xr.audio());
+  await press("music");
+  await page.waitForTimeout(150);
+  const musicOff = await page.evaluate(() => window.__xr.audio());
+  check(soundOff.muted === true && musicOff.music === false, "Sound and Music in the headset menu switch the game's settings", JSON.stringify({ soundOff, musicOff }));
+  await press("sound");
+  await press("music");
+  await page.waitForTimeout(150);
+  const soundBack = await page.evaluate(() => window.__xr.audio());
+  check(soundBack.muted === false && soundBack.music === true, "and back on", JSON.stringify(soundBack));
+  await press("menu"); // close
+
   // ---- two hands pinch beside the board, together, and pull apart: the board grows.
   // Pinched high above it they are not a grab (a pinch has to close within 10 cm of the board).
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());

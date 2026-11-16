@@ -235,6 +235,37 @@ try {
   const handsAgain = await page.evaluate(() => ({ side: window.__xr.pointer("right"), ui: window.__xr.ui() }));
   check(handsAgain.side?.kind === "hand" && handsAgain.ui?.pointer === "hands", "putting the controllers down hands over to hand tracking", JSON.stringify(handsAgain));
 
+  // ---- the thumbstick raises and lowers the board, a step per push.
+  await page.evaluate(() => (window.__iwer.primaryInputMode = "controller"));
+  await page.waitForTimeout(400);
+  const stick = async (y) => {
+    await page.evaluate((v) => window.__iwer.controllers.right.updateAxes("thumbstick", 0, v), y);
+    await page.waitForTimeout(120);
+    await page.evaluate(() => window.__iwer.controllers.right.updateAxes("thumbstick", 0, 0));
+    await page.waitForTimeout(120);
+  };
+  const heightBefore = await page.evaluate(() => window.__xr.boardHeight());
+  await stick(-1);
+  await stick(-1);
+  const stickUp = await page.evaluate(() => window.__xr.boardHeight());
+  await stick(1);
+  await stick(1);
+  const stickDown = await page.evaluate(() => window.__xr.boardHeight());
+  check(Math.abs(stickUp - heightBefore - 0.04) < 1e-6 && Math.abs(stickDown - heightBefore) < 1e-6, "thumbstick up raises the board 2 cm a push, down lowers it", JSON.stringify({ heightBefore, stickUp, stickDown }));
+
+  // ---- Exit asks first: one tap arms it, it disarms after 3 s, and two taps leave.
+  await page.evaluate(() => window.__xr.press("menu"));
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForTimeout(300);
+  check((await page.evaluate(() => window.__xr.state())) === "playing", "one tap on Exit does not leave", "");
+  await page.waitForTimeout(3200);
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForTimeout(300);
+  check((await page.evaluate(() => window.__xr.state())) === "playing", "a tap after the confirm window lapsed only arms it again", "");
+  await page.evaluate(() => window.__xr.press("exit"));
+  await page.waitForFunction(() => window.__xr.state() === "off", null, { timeout: 5000 }).catch(() => undefined);
+  check((await page.evaluate(() => window.__xr.state())) === "off", "a second tap within 3 s leaves", "");
+
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-controllers.png") });
   await browser.close();

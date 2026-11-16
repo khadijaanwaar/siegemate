@@ -275,6 +275,7 @@ export function GameShell() {
     thinkFloorMs: initialThinkFloor,
     rankBadges: true,
     muted: false,
+    music: true,
     safeMode: initialRender.safeMode,
     brightness: initialRender.brightness,
   }));
@@ -359,6 +360,13 @@ export function GameShell() {
       },
       // The same path as the battleground picker: board colours, music and room follow.
       onArena: (theme) => setSettings((current) => (current.arena === theme ? current : { ...current, arena: theme })),
+      // Sound and music toggled in the headset are the settings' own, so the choice outlives the session.
+      onSound: (change) =>
+        setSettings((current) => ({
+          ...current,
+          ...(change.sound === undefined ? {} : { muted: !change.sound }),
+          ...(change.music === undefined ? {} : { music: change.music }),
+        })),
     });
     mixedRef.current = mixed;
     engine.setInteractive(false);
@@ -426,6 +434,8 @@ export function GameShell() {
     engine.setSafeMode(settings.safeMode);
     engine.setBrightness(settings.brightness);
     audio.setMuted(settings.muted);
+    audio.setMusicMuted(!settings.music);
+    mixedRef.current?.setSound({ sound: !settings.muted, music: settings.music });
     saveRenderPrefs({ safeMode: settings.safeMode, brightness: settings.brightness });
     saveArmyPrefs(settings.skins);
     saveSeatSwing(settings.rotateBoard);
@@ -541,6 +551,9 @@ export function GameShell() {
       pointer: (hand: XRHandedness) => mixedRef.current?.debugPointer(hand) ?? null,
       buttonWorld: (id: string) => mixedRef.current?.debugButtonWorld(id) ?? null,
       boardSize: () => mixedRef.current?.boardSize ?? null,
+      boardHeight: () => mixedRef.current?.boardHeight ?? null,
+      /** What the mixer was last told: the 2D settings, whichever side changed them. */
+      audio: () => ({ muted: audio.isMuted, music: !audio.isMusicMuted }),
       ui: () => mixedRef.current?.debugUi() ?? null,
       press: (id: string) => mixedRef.current?.debugPress(id) ?? false,
       panels: () => mixedRef.current?.debugPanels() ?? {},
