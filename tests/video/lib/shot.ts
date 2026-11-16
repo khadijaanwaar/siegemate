@@ -28,6 +28,11 @@ export interface Shot<S = unknown> {
   /** Scripted computer replies, UCI (e.g. "e7e5"), in order; the real engine plays any after them. */
   replies?: string[];
   room?: RoomSpec;
+  /**
+   * A still instead of a clip: only the frame after play() ends is drawn and saved, rendered at `size` and
+   * scaled (Lanczos) to `out`, JPEG at `quality` (stepped down if the file would pass `maxKb`).
+   */
+  still?: { file: string; size: [number, number]; out: [number, number]; quality: number; maxKb?: number };
   seed?: number;
   /** Corner label (default EMULATOR_LABEL; null for none). */
   label?: string | null;
@@ -238,12 +243,37 @@ export class Game {
    * film's frame tap and the hands' calibration. The head should look away from the table (no
    * reticle yet) unless `place` follows at once.
    */
-  async enter(): Promise<void> {
-    await this.page.evaluate(() => {
+  async enter(config: Record<string, unknown> = {}): Promise<void> {
+    await this.page.evaluate((c) => {
       const w = window as any;
-      w.__filmEntering = w.__xr.enter().catch((e: unknown) => (w.__filmEnterError = String(e)));
-    });
+      w.__filmEntering = w.__xr.enter(c).catch((e: unknown) => (w.__filmEnterError = String(e)));
+    }, config);
     await this.entered();
+  }
+  /** Setup: step the headset menu's Battleground on to `theme` (jungle, dawn, sands, frost, storm, dusk), menu closed after. */
+  async arena(theme: string): Promise<void> {
+    const now = () => this.page.evaluate(() => String((window as any).__xr.room()?.theme ?? ""));
+    if ((await now()) === theme) return;
+    await this.press("menu");
+    for (let i = 0; i < 7 && (await now()) !== theme; i++) {
+      await this.press("arena");
+      await this.ctx.wait(120);
+    }
+    await this.press("menu");
+    if ((await now()) !== theme) throw new Error(`could not reach the ${theme} battleground`);
+    await this.ctx.wait(1500);
+  }
+  /** A controller's pose (wrist of the grip) and its trigger, set directly (controller stills). */
+  controller(side: Side, p: P3, q: Quat, trigger: number): Promise<void> {
+    return this.page.evaluate(
+      ([s, pos, quat, t]) => {
+        const c = (window as any).__iwer.controllers[s as string];
+        c.position.set(...(pos as number[]));
+        c.quaternion.set(...(quat as number[]));
+        c.updateButtonValue("trigger", t);
+      },
+      [side, p, q, trigger] as const,
+    );
   }
   /** The menu's own "Play on your table" button, as a player taps it. */
   async enterFromMenu(): Promise<void> {
@@ -343,6 +373,8 @@ export class ShotContext {
 
   /** A session is presenting (as of the last frame). */
   xr = false;
+  /** Capture the next frame whatever the stride (a still's last frame). */
+  captureNext = false;
   /** The 2D page as a floating browser window (before mixed reality), with a pointer's cursor. */
   window: WindowState | null = null;
 
@@ -422,7 +454,8 @@ export class ShotContext {
       const tr = this.tracks[side];
       hands[side] = { p: tr.position(t), q: tr.quaternion(t), pinch: tr.pinch(t), pose: tr.pose(t), poseK: tr.poseK(t), shown: tr.shown(t) };
     }
-    const capture = this.phase === "play" && this.n % this.o.stride === 0;
+    const capture = this.phase === "play" && (this.n % this.o.stride === 0 || this.captureNext);
+    this.captureNext = false;
     const win = this.window;
     // The 2D page in its window, live: step, photograph the page, then composite it over the room.
     const live = Boolean(capture && win && !this.xr);
@@ -516,7 +549,7 @@ export class ShotContext {
     const pointing = await this.page.evaluate(() => (window as any).__filmHands);
     for (const side of ["left", "right"] as const) {
       const j = pinched?.[side], k = pointing?.[side];
-      if (!j?.["thumb-tip"] || !k?.["index-finger-tip"]) throw new Error(`no ${side} hand joints to calibrate from`);
+      if (!j?.["thumb-tip"] || !k?.["index-finger-tip"]) continue; // controllers in hand: nothing to calibrate
       const b = base[side];
       const mid: P3 = [(j["thumb-tip"][0] + j["index-finger-tip"][0]) / 2, (j["thumb-tip"][1] + j["index-finger-tip"][1]) / 2, (j["thumb-tip"][2] + j["index-finger-tip"][2]) / 2];
       this.calibration[side] = {

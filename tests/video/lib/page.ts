@@ -491,8 +491,17 @@ export async function installTap(): Promise<boolean> {
     const view = pose?.views?.[0];
     if (view) w.__filmView = { proj: Array.from(view.projectionMatrix), inv: Array.from(view.transform.inverse.matrix) };
     const hands: Record<string, Record<string, number[]>> = {};
+    const controllers: Record<string, number[]> = {};
     for (const src of s.inputSources) {
-      if (!src.hand) continue;
+      if (!src.hand) {
+        // A controller: its grip pose, for the drawn stand-in.
+        const grip = src.gripSpace ? frame.getPose(src.gripSpace, ref) : null;
+        if (grip) {
+          const { position: p, orientation: q } = grip.transform;
+          controllers[src.handedness] = [p.x, p.y, p.z, q.x, q.y, q.z, q.w];
+        }
+        continue;
+      }
       const joints: Record<string, number[]> = {};
       for (const [name, space] of src.hand) {
         const jp = frame.getJointPose(space, ref);
@@ -501,6 +510,7 @@ export async function installTap(): Promise<boolean> {
       hands[src.handedness] = joints;
     }
     w.__filmHands = hands;
+    w.__filmControllers = controllers;
   };
   s.requestAnimationFrame(loop);
   return true;
@@ -896,6 +906,43 @@ export function installFrameTools(): void {
       }
     }
 
+    // Touch controllers, when held: a plain dark stand-in (handle and tracking ring) at the grip pose.
+    const pads = xr ? (w.__filmControllers as Record<string, number[]> | undefined) : undefined;
+    for (const side of Object.keys(pads ?? {})) {
+      const c = pads![side]!;
+      const [px, py, pz, qx, qy, qz, qw] = c as [number, number, number, number, number, number, number];
+      const at = (x: number, y: number, z: number) => {
+        // Rotate (x, y, z) by the grip's quaternion, then move it to the grip.
+        const tx = 2 * (qy * z - qz * y), ty = 2 * (qz * x - qx * z), tz = 2 * (qx * y - qy * x);
+        return project(view, [px + x + qw * tx + (qy * tz - qz * ty), py + y + qw * ty + (qz * tx - qx * tz), pz + z + qw * tz + (qx * ty - qy * tx), 0.017], W, H);
+      };
+      const top = at(0, 0.01, -0.01), bottom = at(0, -0.06, 0.05);
+      if (!top || !bottom) continue;
+      const ring = Array.from({ length: 33 }, (_, i) => {
+        const t = (i / 32) * Math.PI * 2;
+        return at(Math.cos(t) * 0.042, 0.03 + Math.sin(t) * 0.02, -0.035 + Math.sin(t) * 0.035);
+      });
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      const stroke = (pts: Array<{ x: number; y: number } | null>, width: number, color: string) => {
+        ctx.beginPath();
+        pts.forEach((p, i) => p && (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.lineWidth = width;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      };
+      const hw = 2 * top.r;
+      stroke([top, bottom], hw + 2, "#0d0e10");
+      stroke([top, bottom], hw, "#2a2c31");
+      stroke([top, bottom], hw * 0.3, "#4a4d55");
+      const rw = Math.max(2, hw * 0.45);
+      stroke(ring, rw + 2, "#0d0e10");
+      stroke(ring, rw, "#33363c");
+      ctx.restore();
+    }
+
     if (a.label) {
       const s = H / 1080;
       ctx.font = `600 ${Math.round(22 * s)}px Inter, system-ui, sans-serif`;
@@ -907,7 +954,7 @@ export function installFrameTools(): void {
       ctx.beginPath();
       (ctx as any).roundRect(x - pad, y - Math.round(24 * s), tw + pad * 2, Math.round(34 * s), Math.round(8 * s));
       ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.86)";
+      ctx.fillStyle = "rgba(255,246,232,0.7)";
       ctx.fillText(a.label, x, y);
     }
     return out.toDataURL(a.format, a.format === "image/jpeg" ? 0.93 : undefined);

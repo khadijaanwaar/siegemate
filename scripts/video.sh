@@ -12,6 +12,8 @@
 #                 in the one encode, e.g. --final --size 2560x1440 --out 1920x1080
 #   --no-build    reuse film-out/.build (the last build) instead of building the game again
 #   --no-rough    skip the rough cut of the shots
+#   --stills a,b  render README / Devpost stills instead (tests/video/stills/<name>.ts, or "all"):
+#                 one drawn frame each, saved as JPEG where the still says (docs/images/readme, docs/submission/gallery)
 #   --list        print the shots and what each one waits on
 #
 # Output in film-out/<W>x<H>-<fps>/ (gitignored): <shot>.mp4, <shot>.json (events with times, for
@@ -34,6 +36,7 @@ EXTRA=()
 while [ $# -gt 0 ]; do
   case $1 in
     --shots) SHOTS=$2; shift 2 ;;
+    --stills) SHOTS="stills:$2"; ROUGH=0; shift 2 ;;
     --draft) QUALITY=draft; shift ;;
     --final) QUALITY=final; shift ;;
     --size) EXTRA+=("SIZE=$2"); shift 2 ;;
@@ -49,7 +52,7 @@ while [ $# -gt 0 ]; do
         node --no-warnings -e "import('./tests/video/shots/$s.ts').then((m) => console.log('$s' + (m.default.needs ? '  (waits on: ' + m.default.needs + ')' : '') + '\n    ' + m.default.description))"
       done
       exit 0 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -91,6 +94,7 @@ for shot in $NAMES; do
   RENDER=$!
   if wait "$RENDER"; then
     RENDER=
+    if [[ $shot == still:* ]]; then DONE+=("$shot"); continue; fi
     node --no-warnings tests/video/deliver.ts stills "$shot"
     node --no-warnings tests/video/deliver.ts sound "$shot" || echo "[film] $shot: no game sound laid in" >&2
     DONE+=("$shot")
