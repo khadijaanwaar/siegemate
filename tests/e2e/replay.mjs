@@ -33,6 +33,13 @@ const check = (ok, label, detail = "") => {
 
 const SENTINEL = '{"version":1,"sentinel":true}';
 
+/** Clicks all over the visible board (above the replay bar), in pairs, the way a viewer would try a move. */
+async function pokeTheBoard(page) {
+  for (let y = 170; y <= 530; y += 60) {
+    for (let x = 250; x <= 1030; x += 65) await page.mouse.click(x, y);
+  }
+}
+
 try {
   await new Promise((resolve) => setTimeout(resolve, 2500));
   const browser = await chromium.launch({ channel: "chrome", headless: !process.argv.includes("--headed") });
@@ -73,6 +80,10 @@ try {
   await page.click('[data-testid="replay-toggle"]');
   await page.waitForFunction(() => window.__replay.state() && !window.__replay.state().playing && !window.__replay.state().busy, null, { timeout: 15000 });
   const paused = await page.evaluate(() => window.__replay.state().ply);
+  await pokeTheBoard(page);
+  await page.waitForTimeout(600);
+  const poked = await page.evaluate(() => ({ ply: window.__replay.state().ply, plies: window.__xr.snapshot().sanList.length }));
+  check(poked.ply === paused && poked.plies === paused, "clicking the paused board moves nothing", JSON.stringify(poked));
   await page.click('button[aria-label="Back one move"]');
   const back = await page.evaluate(() => ({ ply: window.__replay.state().ply, plies: window.__xr.snapshot().sanList.length }));
   check(back.ply === paused - 1 && back.plies === paused - 1, "Back steps one move back", JSON.stringify({ paused, back }));
@@ -104,10 +115,20 @@ try {
   }));
   check(mated.status === "over" && !mated.gameOverDialog, "the mate plays out without the viewer's own result dialog", JSON.stringify(mated.status));
   check(mated.save === SENTINEL && mated.stats === statsBefore, "the viewer's saved match and record are untouched", JSON.stringify({ save: mated.save, stats: mated.stats }));
-  if (SHOTS) {
-    mkdirSync(docs, { recursive: true });
-    await page.screenshot({ path: join(docs, "replay-2d.png") });
-  }
+  // Let the end-of-game shot (a dolly onto the fallen king) finish, then go back to the start.
+  await page.waitForTimeout(3500);
+  await pokeTheBoard(page);
+  await page.waitForTimeout(600);
+  const afterMate = await page.evaluate(() => ({ status: window.__xr.snapshot().status, plies: window.__xr.snapshot().sanList.length }));
+  check(afterMate.status === "over" && afterMate.plies === SCHOLARS.moves.length, "clicking the board after the mate changes nothing", JSON.stringify(afterMate));
+  await page.click('button[aria-label="To the start"]');
+  await page.waitForTimeout(2500);
+  const restarted = await page.evaluate(() => ({ ply: window.__replay.state().ply, status: window.__xr.snapshot().status }));
+  check(restarted.ply === 0 && restarted.status === "playing", "To the start puts the opening position back", JSON.stringify(restarted));
+  mkdirSync(docs, { recursive: true });
+  // The seat after leaving the end shot: checked by eye (docs/share/replay-2d.png).
+  if (SHOTS) await page.screenshot({ path: join(docs, "replay-2d.png") });
+  await page.click('[data-testid="replay-end"]');
 
   // ---- share: the battle card.
   await page.click('button:has-text("Share")');
@@ -132,6 +153,11 @@ try {
   if (SHOTS) {
     writeFileSync(join(docs, "battle-card.png"), Buffer.from(card.png, "base64"));
     await page.screenshot({ path: join(docs, "share-sheet-2d.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: join(docs, "share-sheet-phone.png") });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(300);
   }
   // Where the platform has a share sheet that takes files (a phone): the card and the link go to it.
   await page.evaluate(() => {
@@ -167,6 +193,13 @@ try {
     `${saved?.suggestedFilename()} · ${confirmed} · ${clip.slice(0, 40)}`,
   );
   await page.click('button[aria-label="Close"]');
+  if (SHOTS) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: join(docs, "replay-phone.png") });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(300);
+  }
 
   // ---- play your own game.
   await page.click('[data-testid="replay-own-game"]');
