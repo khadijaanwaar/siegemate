@@ -24,6 +24,6 @@ export default defineShot({
   },
   async play(ctx) {
     await ctx.page.evaluate(() => void (window as any).__xr.move("e4", "d5"));
-    await intoMove(ctx, 3, Number(process.env.HIT_MS ?? 900));
+    await intoMove(ctx, 3, Number(process.env.HIT_MS ?? 2700));
   },
 });

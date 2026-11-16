@@ -249,8 +249,8 @@ New in the window, all committed from Nov 13 to Nov 16 2026:
   check the rules on AI-generated content and the tools' terms.
 - Licence: MIT (decided Nov 16), in `LICENSE`.
 - Repository URL and video URL (placeholders above).
-- That the live site matches main at the freeze. The plan's last logged deploy is `0409b4a` (Nov 13); the share QR,
-  promotion card, height controls and Lane B fixes need a fresh deploy.
+- That the live site matches main at the freeze. Last deploy: `4350869` (Nov 16, Cloudflare deployment fb8dfba6),
+  with the share QR, promotion card, height controls and Lane B fixes.
 - Whether Web Share or the clipboard work in the Quest Browser 2D page. The headset share path is the QR code; the
   phone and desktop path is tested in Chrome only.
 - That judges play on Quest 3 or 3S. Nothing has been run on any Quest; frame rate on a device is unknown.

@@ -12,6 +12,7 @@ export default defineShot({
   storage: setupStorage("ivory", "sun"),
   async setup(ctx) {
     await seated(ctx);
+    await ctx.game.arena("jungle");
     return { g1: await ctx.game.square("g1"), f3: await ctx.game.square("f3") };
   },
   firstView: ({ g1, f3 }) => fromSeat(mid(g1, f3, 0.6), 52),

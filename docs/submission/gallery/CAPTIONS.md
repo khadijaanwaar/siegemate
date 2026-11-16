@@ -68,11 +68,10 @@ apart; the board mid-grow (about 1.4×). Battleground **Dawn Court**. Control sl
 ### 07-share-the-battle.jpg
 
 **Shot:** The end of a game. The headset result card "VICTORY" with the record line, Rematch, Exit and "Share this
-battle", and beside it the share card open: "Scan to replay", the QR code, "siegemate.pages.dev". The final position
-on the board below, the winning figure standing over the king. Camera at 45 cm, square on to the two cards.
-Battleground **Siege at Dusk** (deep orange veil, embers).
+battle", square on from about 45 cm, over the final position. Battleground **Siege at Dusk** (warm veil, embers).
+(Pressing Share puts the QR card in the result card's place; the README's `share.jpg` shows that side.)
 
-**Caption:** Win, then Share this battle: a QR code of a replay link that carries the whole game. No server, no account.
+**Caption:** Win, and the result card offers Share this battle: it turns the whole game into a QR code of a replay link. No server, no account.
 
 ### 08-the-replay-anywhere.jpg
 
