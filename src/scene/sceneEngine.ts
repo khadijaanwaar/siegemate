@@ -31,6 +31,7 @@ import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./qualit
 import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
 import { LightBlendPass } from "./lightBlend";
+import { fightSeeds, ProgramKeeper } from "./programKeeper";
 import type { TableRig } from "../xr/tableRig";
 import { isTableXrSupported } from "../xr/session";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
@@ -1144,6 +1145,12 @@ export class SceneEngine {
   /** Idle figures update in turns; see `IdleScheduler`. */
   private readonly idle = new IdleScheduler(1);
   private readonly lightBlend = new LightBlendPass();
+  /** Holds the shader programs of a fight's throwaway materials (see programKeeper.ts). */
+  private keeper!: ProgramKeeper;
+  private keeperSeeded = false;
+  /** Surfaces of figures a rebuild took off the table, disposed once the new ones are compiled. */
+  private retiredSurfaces: THREE.Material[] = [];
+  private keeperTick = 0;
   private lastFpsReport = 0;
 
   constructor(
@@ -1214,6 +1221,10 @@ export class SceneEngine {
     this.landmarks = new Landmarks(preset, look);
     this.scene.add(this.landmarks.group);
     this.world.name = "game_world";
+    this.keeper = new ProgramKeeper(this.renderer, (object) => {
+      this.compileForEachLightSet(() => this.renderer.compile(object, this.camera, this.scene));
+    });
+    this.scene.add(this.keeper.group);
     this.scene.add(this.world);
     this.world.add(this.board.group);
     this.board.applyArena(look);
@@ -1335,6 +1346,11 @@ export class SceneEngine {
     this.idle.setBuckets(TABLE_IDLE_EVERY);
     this.refreshMaterials();
     this.tableWarmth = "cold";
+    // Stand-ins for a fight's materials, so the warm-up below compiles them too.
+    if (!this.keeperSeeded) {
+      this.keeper.seed(fightSeeds());
+      this.keeperSeeded = true;
+    }
 
     // The room is the player's own: no hall ambience, the score steps back,
     // and the next battleground's score is decoded before the menu asks for it.
@@ -1349,11 +1365,45 @@ export class SceneEngine {
     }
   }
 
+  /** True inside a headset frame, with the XR framebuffer (and its multiview) bound. */
+  private xrTargetBound(): boolean {
+    const xr = this.renderer.xr;
+    // (Public on WebXRManager, missing from its typings.)
+    const target = xr.isPresenting ? (xr as unknown as { getRenderTarget(): THREE.WebGLRenderTarget | null }).getRenderTarget() : null;
+    return target !== null && this.renderer.getRenderTarget() === target;
+  }
+
+  /**
+   * Runs `compile` once for each set of lights a table frame can have.
+   *
+   * The light counts are part of every program's key, unlit materials
+   * included, and the check alarm's lamp is only in the scene while a king is
+   * in check (its group hides when the alarm is out, so the lamp costs nothing
+   * on the other turns). Without this the first check compiled the whole board
+   * again on the beat that announces it. A material keeps one program per
+   * light set, so after both compiles either set is a lookup.
+   */
+  private compileForEachLightSet<T>(compile: () => T): T[] {
+    const alarm = this.alarm.group;
+    const shown = alarm.visible;
+    const results: T[] = [];
+    try {
+      for (const lit of [shown, !shown]) {
+        alarm.visible = lit;
+        results.push(compile());
+      }
+    } finally {
+      alarm.visible = shown;
+    }
+    return results;
+  }
+
   /**
    * Compiles the programs of everything already in the scene (board, figures,
-   * panels, room) for the table before the board is shown. Effects built
-   * during a fight (bursts, sparks, debris) are not in the scene yet and still
-   * compile when they first appear.
+   * panels, room) for the table before the board is shown, under each light
+   * set (see compileForEachLightSet). Effects built during a fight are not in
+   * the scene yet; the program keeper's stand-ins for them are, so their
+   * programs are compiled here too (see programKeeper.ts).
    *
    * Nothing a table frame draws matches a 2D program: the hall's lights and fog
    * are gone, shadows are off, tone mapping moves into the shader (no
@@ -1368,12 +1418,9 @@ export class SceneEngine {
   private warmTablePrograms(): void {
     const rig = this.table;
     const restore = this.tableRestore;
-    const xr = this.renderer.xr;
     if (!rig || !restore || this.tableWarmth !== "cold") return;
     // Only inside a headset frame: outside one the multiview define is missing.
-    // (Public on WebXRManager, missing from its typings.)
-    const target = xr.isPresenting ? (xr as unknown as { getRenderTarget(): THREE.WebGLRenderTarget | null }).getRenderTarget() : null;
-    if (!target || this.renderer.getRenderTarget() !== target) return;
+    if (!this.xrTargetBound()) return;
     this.tableWarmth = "compiling";
     const children = this.scene.children;
     const putAway = new Set<THREE.Object3D>(restore.scenery.map(([group]) => group));
@@ -1383,8 +1430,21 @@ export class SceneEngine {
     this.scene.children = children.filter((child) => !putAway.has(child));
     rig.root.visible = true;
     let compiled: Promise<unknown>;
+    const compileScene = (): Promise<unknown> => this.renderer.compileAsync(this.scene, this.camera);
+    // A captured figure fades out, which makes its surfaces transparent, and
+    // three draws a transparent double-sided surface in two passes (back
+    // faces, then front), each its own program. So the scene is compiled once
+    // more with every figure's surfaces as a fade leaves them.
+    const fading = [...this.pieces.values()].flatMap((view) => view.fadingSurfaces).filter((material) => !material.transparent);
     try {
-      compiled = this.renderer.compileAsync(this.scene, this.camera);
+      const passes = this.compileForEachLightSet(compileScene);
+      for (const material of fading) material.transparent = true;
+      try {
+        passes.push(...this.compileForEachLightSet(compileScene));
+      } finally {
+        for (const material of fading) material.transparent = false;
+      }
+      compiled = Promise.all(passes);
     } catch (error) {
       console.warn("[scene] could not warm the table's shaders", error);
       compiled = Promise.resolve();
@@ -1392,9 +1452,18 @@ export class SceneEngine {
       rig.root.visible = shown;
       this.scene.children = children;
     }
+    // The fight's stand-ins were compiled with everything else: their
+    // programs now live for the session.
+    this.keeper.noteSeeds();
+    this.disposeRetiredSurfaces();
     void compiled.then(() => {
       if (this.tableWarmth === "compiling") this.tableWarmth = "warm";
     });
+  }
+
+  private disposeRetiredSurfaces(): void {
+    for (const surface of this.retiredSurfaces) surface.dispose();
+    this.retiredSurfaces = [];
   }
 
   /** Back to the 2D hall exactly as it was. */
@@ -1402,6 +1471,7 @@ export class SceneEngine {
     const rig = this.table;
     const restore = this.tableRestore;
     if (!rig || !restore) return;
+    this.disposeRetiredSurfaces();
     this.table = null;
     this.tableRestore = null;
     this.unwatchSession?.();
@@ -1585,6 +1655,38 @@ export class SceneEngine {
       moving: () => this.movesInFlight,
       lastBeat: () => this.lastBeat,
       tableWarmth: () => this.tableWarmth,
+      keptPrograms: () => this.keeper.size,
+      /** What the keeper holds a stand-in for: object, material and the parameters that pick a program. */
+      keepers: () =>
+        this.keeper.group.children.map((object) => {
+          const material = (object as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          const flags = [
+            material.map ? "map" : "",
+            material.transparent ? "transparent" : "",
+            material.side === THREE.DoubleSide ? "double" : material.side === THREE.BackSide ? "back" : "",
+            material.vertexColors ? "vertexColors" : "",
+            (object as THREE.InstancedMesh).isInstancedMesh ? `instanced${(object as THREE.InstancedMesh).instanceColor ? "+color" : ""}` : "",
+            material.toneMapped === false ? "untoned" : "",
+            material.fog === false ? "nofog" : "",
+          ].filter(Boolean);
+          return `${object.type}/${material.type} ${flags.join(",")} [${Object.keys((object as THREE.Mesh).geometry?.attributes ?? {}).join(",")}] ${object.name}`;
+        }),
+      /** Which object (name path) and material type hold each live program, for finding a compile's source. */
+      programOwners: () => {
+        const owners: Record<number, string> = {};
+        this.scene.traverse((object) => {
+          const material = (object as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+          if (!material) return;
+          for (const entry of Array.isArray(material) ? material : [material]) {
+            const program = (this.renderer.properties.get(entry) as { currentProgram?: { id: number } }).currentProgram;
+            if (!program || owners[program.id]) continue;
+            const path: string[] = [];
+            for (let node: THREE.Object3D | null = object; node && path.length < 4; node = node.parent) path.push(node.name || node.type);
+            owners[program.id] = `${entry.type} @ ${path.join(" < ")}`;
+          }
+        });
+        return owners;
+      },
     };
     (window as unknown as { __scene: typeof stats }).__scene = stats;
   }
@@ -1688,6 +1790,12 @@ export class SceneEngine {
       // the room, not darken it (see lightBlend.ts).
       this.lightBlend.apply(this.scene);
       this.renderer.render(this.scene, this.camera);
+      // Every third frame, adopt the programs of materials a fight just made,
+      // so the next fight finds them compiled.
+      this.keeperTick = (this.keeperTick + 1) % 3;
+      // Only once the board is shown: while it is hidden its lights are left
+      // out of a compile, so a stand-in would come out with the wrong program.
+      if (this.keeperTick === 0 && this.table.root.visible && this.xrTargetBound()) this.keeper.learn(this.world);
       return;
     }
 
@@ -1917,12 +2025,20 @@ export class SceneEngine {
     // cannot re-register the figure it is carrying once its awaits resolve.
     this.boardRevision += 1;
     this.rebuildPending = false;
-    for (const piece of this.pieces.values()) piece.dispose();
     // Figures mid-march, mid-strike or mid-death are not in `pieces` — without
-    // this they would stay in the scene forever as a frozen double of the figure
-    // the rebuild puts back on their square.
-    for (const piece of this.motion) piece.dispose();
-    for (const piece of this.captured) piece.dispose();
+    // the motion set they would stay in the scene forever as a frozen double of
+    // the figure the rebuild puts back on their square.
+    const old = [...this.pieces.values(), ...this.motion, ...this.captured];
+    for (const piece of old) {
+      const surfaces = piece.detach();
+      // A surface's programs die with the last material using them. On the
+      // table the old surfaces are kept until the next headset frame has
+      // compiled the new figures (warmTablePrograms), or a new game would
+      // compile every figure again, fade variants included, mid-session.
+      if (this.table) this.retiredSurfaces.push(...surfaces);
+      else for (const surface of surfaces) surface.dispose();
+    }
+    if (this.table) this.tableWarmth = "cold";
     this.pieces.clear();
     this.motion.clear();
     this.hoveredPiece = null;
@@ -5854,6 +5970,8 @@ export class SceneEngine {
     this.pieces.clear();
     this.captured = [];
     this.effects.dispose();
+    this.keeper.dispose();
+    this.disposeRetiredSurfaces();
     this.alarm.dispose();
     this.spellLights.dispose();
     disposeStrikeAssets();
