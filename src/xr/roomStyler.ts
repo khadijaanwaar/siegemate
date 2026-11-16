@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { ArenaTheme } from "../scene/arena";
+import { toLightBlending } from "../scene/lightBlend";
 import { ROOM_THEMES, spawnParticle, stepParticle, type BoardArea, type RoomWeather } from "./roomTheme";
 
 /** Most particles any theme asks for (the pool is built once). */
@@ -65,11 +66,12 @@ export class RoomStyler {
         color: 0xffffff,
         transparent: true,
         opacity: 0,
-        blending: THREE.AdditiveBlending,
         depthWrite: false,
         toneMapped: false,
       }),
     );
+    // Light pooling on the table adds to the room; it never darkens it (see lightBlend.ts).
+    toLightBlending(this.glow.material);
     this.glow.renderOrder = -5;
 
     const dotGeometry = new THREE.BufferGeometry();
@@ -112,7 +114,12 @@ export class RoomStyler {
     for (let i = 0; i < this.count; i += 1) spawnParticle(this.kind, head, board, this.random, this.positions[i], true, headYaw);
     const dotsMaterial = this.dots.material;
     dotsMaterial.color.setHex(weather.color);
-    dotsMaterial.blending = this.kind === "embers" || this.kind === "pollen" ? THREE.AdditiveBlending : THREE.NormalBlending;
+    // Embers and pollen glow: light that adds to the room. Set here rather than
+    // left to the engine's per-frame pass, which converts each material once
+    // and would never see this one flipped back to plain additive, which
+    // darkens passthrough.
+    if (this.kind === "embers" || this.kind === "pollen") toLightBlending(dotsMaterial);
+    else dotsMaterial.blending = THREE.NormalBlending;
     dotsMaterial.size = this.kind === "sand" ? 0.006 : this.kind === "embers" ? 0.01 : 0.014;
     dotsMaterial.needsUpdate = true;
     this.streaks.material.color.setHex(weather.color);
