@@ -1,7 +1,18 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { BOARD_SIZE_KEY, DEFAULT_BOARD_SIZE, loadBoardSize, pastDeadZone, saveBoardSize, twoHandTransform } from "./manipulate";
+import {
+  BOARD_HEIGHT_KEY,
+  BOARD_SIZE_KEY,
+  DEFAULT_BOARD_SIZE,
+  loadBoardHeight,
+  loadBoardSize,
+  nudgeHeight,
+  pastDeadZone,
+  saveBoardHeight,
+  saveBoardSize,
+  twoHandTransform,
+} from "./manipulate";
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const start = {
@@ -68,6 +79,47 @@ describe("pastDeadZone", () => {
     expect(pastDeadZone(start, { left: v(-0.1, 0.9, -0.375), right: v(0.1, 0.9, -0.375) })).toBe(true);
     expect(pastDeadZone(start, turned(6))).toBe(true);
     expect(pastDeadZone(start, { left: v(-0.106, 0.9, -0.4), right: v(0.106, 0.9, -0.4) })).toBe(true);
+  });
+});
+
+describe("board height", () => {
+  it("steps 2 cm a press and stops 25 cm either side of where the board was placed", () => {
+    expect(nudgeHeight(0, 1)).toBeCloseTo(0.02, 9);
+    expect(nudgeHeight(0.04, -1)).toBeCloseTo(0.02, 9);
+    expect(nudgeHeight(0.24, 1)).toBeCloseTo(0.25, 9);
+    expect(nudgeHeight(0.25, 1)).toBeCloseTo(0.25, 9);
+    expect(nudgeHeight(-0.25, -1)).toBeCloseTo(-0.25, 9);
+    // Thirteen presses from the bottom stop at the top, never past it.
+    let height = -0.25;
+    for (let press = 0; press < 30; press += 1) height = nudgeHeight(height, 1);
+    expect(height).toBeCloseTo(0.25, 9);
+  });
+
+  it("is remembered, clamped, and survives bad storage", () => {
+    const items = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => void items.set(key, value),
+      removeItem: (key: string) => void items.delete(key),
+    };
+    expect(loadBoardHeight(storage)).toBe(0);
+    saveBoardHeight(storage, 0.06);
+    expect(loadBoardHeight(storage)).toBeCloseTo(0.06, 9);
+    items.set(BOARD_HEIGHT_KEY, "3");
+    expect(loadBoardHeight(storage)).toBe(0.25);
+    items.set(BOARD_HEIGHT_KEY, "nonsense");
+    expect(loadBoardHeight(storage)).toBe(0);
+    const hostile = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("quota");
+      },
+      removeItem: () => undefined,
+    };
+    expect(loadBoardHeight(hostile)).toBe(0);
+    expect(() => saveBoardHeight(hostile, 0.02)).not.toThrow();
   });
 });
 

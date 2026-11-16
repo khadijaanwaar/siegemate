@@ -76,6 +76,37 @@ export function pastDeadZone(start: { left: THREE.Vector3; right: THREE.Vector3 
   return Math.abs(ratio - 1) > DEAD_ZONE.spread;
 }
 
+export const BOARD_HEIGHT_KEY = "mr-chess:board-height";
+/** One press of ▲ / ▼ (or a flick of the thumbstick) lifts or lowers the board this much... */
+export const HEIGHT_STEP_M = 0.02;
+/** ...up to this far from where it was placed, either way. */
+export const HEIGHT_LIMIT_M = 0.25;
+
+/** The board's height offset after one step up (1) or down (-1), in metres. */
+export function nudgeHeight(offset: number, direction: 1 | -1): number {
+  // Whole steps, so repeated presses never drift off the 2 cm grid.
+  const steps = Math.round(offset / HEIGHT_STEP_M) + direction;
+  return THREE.MathUtils.clamp(steps * HEIGHT_STEP_M, -HEIGHT_LIMIT_M, HEIGHT_LIMIT_M);
+}
+
+export function loadBoardHeight(storage: SaveStorage): number {
+  try {
+    const value = Number.parseFloat(storage.getItem(BOARD_HEIGHT_KEY) ?? "");
+    if (!Number.isFinite(value)) return 0;
+    return THREE.MathUtils.clamp(value, -HEIGHT_LIMIT_M, HEIGHT_LIMIT_M);
+  } catch {
+    return 0;
+  }
+}
+
+export function saveBoardHeight(storage: SaveStorage, offset: number): void {
+  try {
+    storage.setItem(BOARD_HEIGHT_KEY, offset.toFixed(3));
+  } catch {
+    // The height simply is not remembered.
+  }
+}
+
 export function loadBoardSize(storage: SaveStorage): number {
   try {
     const value = Number.parseFloat(storage.getItem(BOARD_SIZE_KEY) ?? "");
