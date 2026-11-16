@@ -6,6 +6,12 @@ import { UI } from "./palette";
 const PX_PER_M = 3000;
 /** Meta's hands minimum hit target. */
 export const MIN_TARGET_M = 0.022;
+/**
+ * Moving glyphs are redrawn at most this often. Every redraw re-uploads the
+ * whole canvas (the coach strip is 1260x240), and at 72-90 Hz that upload was
+ * a steady cost on the headset for a hand gesture that reads fine at 15.
+ */
+const ANIMATE_HZ = 15;
 
 export interface PanelButton {
   id: string;
@@ -42,6 +48,7 @@ export class CanvasPanel {
   private pressedId: string | null = null;
   private pressedUntil = 0;
   private animated = false;
+  private drawnAt = -Infinity;
 
   constructor(
     readonly width: number,
@@ -55,7 +62,10 @@ export class CanvasPanel {
     this.ctx = ctx;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.anisotropy = 4;
+    // Drawn near 1:1 at arm's length (PX_PER_M): no mip chain to rebuild on
+    // every upload, and no anisotropic taps.
+    this.texture.generateMipmaps = false;
+    this.texture.minFilter = THREE.LinearFilter;
     const material = new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, toneMapped: false, depthWrite: false });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
     this.mesh.renderOrder = 20;
@@ -118,9 +128,12 @@ export class CanvasPanel {
   }
 
   update(now: number): void {
-    if (this.animated || (this.pressedId && now >= this.pressedUntil)) {
-      if (this.pressedId && now >= this.pressedUntil) this.pressedId = null;
+    if (this.pressedId && now >= this.pressedUntil) {
+      this.pressedId = null;
       if (this.mesh.visible) this.redraw(now);
+    } else if (this.animated && this.mesh.visible && (now < this.drawnAt || now - this.drawnAt >= 1 / ANIMATE_HZ)) {
+      // (`now < drawnAt`: a redraw stamped from another clock must never freeze the glyph.)
+      this.redraw(now);
     }
   }
 
@@ -132,6 +145,7 @@ export class CanvasPanel {
   }
 
   private redraw(now: number): void {
+    this.drawnAt = now;
     const { ctx, canvas } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);

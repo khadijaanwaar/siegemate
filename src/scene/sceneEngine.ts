@@ -6,7 +6,7 @@ import type { GameController } from "../core/gameController";
 import { PIECE_LABEL, type Faction, type GameSnapshot, type MoveEvent, type PieceKind, type SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
 import type { ArenaTheme } from "./arena";
-import { ARENA_LOOKS, DEFAULT_ARENA } from "./arena";
+import { ARENA_LOOKS, ARENA_ORDER, DEFAULT_ARENA } from "./arena";
 import { Battlefield } from "./battlefield";
 import { Dressing } from "./dressing";
 import { Landmarks } from "./landmarks";
@@ -32,6 +32,7 @@ import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
 import { LightBlendPass } from "./lightBlend";
 import type { TableRig } from "../xr/tableRig";
+import { isTableXrSupported } from "../xr/session";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -150,6 +151,13 @@ const DEFAULT_FOV = 46;
 const TABLE_CREST_SCALE = 0.65;
 /** Light on a real table: sky and key intensities, and the exposure lift over the hall's. */
 const TABLE_LIGHT = { sky: 2.4, key: 2.2, exposure: 1.15 } as const;
+/** Longest a capture on the table waits for its strike and death clips to arrive (see armCombat). */
+const TABLE_CLIP_WAIT_S = 0.8;
+
+/** The battleground after `theme` in the picker's order (the headset menu steps through them so). */
+function nextArenaOf(theme: ArenaTheme): ArenaTheme {
+  return ARENA_ORDER[(ARENA_ORDER.indexOf(theme) + 1) % ARENA_ORDER.length];
+}
 /** How far above the stone (game units, ~a figure's height) a held order still aims at a square. */
 const ORDER_REACH_UNITS = 3.2;
 /** On a table every idle figure updates every other frame (72 Hz -> 36 Hz breathing). */
@@ -906,6 +914,9 @@ function strideEasing(ramp: number): Easing {
   };
 }
 
+/** Fired on `window` once the armies are loaded and the board stands (main.tsx waits for it). */
+export const GAME_READY_EVENT = "siegemate:ready";
+
 /**
  * Owns every three.js object. The chess core drives it through events and the
  * animator hook; React only calls the small imperative API at the bottom.
@@ -957,6 +968,8 @@ export class SceneEngine {
   private boardRevision = 0;
   /** Move animations currently in flight. */
   private movesInFlight = 0;
+  /** The last finished move beat, wall clock (ms) and engine clock (s): read by the perf specs. */
+  private lastBeat: { wallMs: number; engineS: number; capture: boolean } | null = null;
   /** A rebuild waiting for the board to go quiet (see {@link setQuality}). */
   private rebuildPending = false;
   /** Armies the player has asked for, applied by {@link syncArmies}. */
@@ -1013,6 +1026,16 @@ export class SceneEngine {
     autoRotate: boolean;
     scenery: (readonly [THREE.Object3D, boolean])[];
   } | null = null;
+  /**
+   * Table programs: "cold" until the first headset frame on the table, when
+   * every shader the table will draw is compiled behind the placement reticle
+   * (see {@link warmTablePrograms}).
+   */
+  private tableWarmth: "cold" | "compiling" | "warm" = "cold";
+  /** The battleground changed on the table, where the reflection probe is not rebuilt. */
+  private environmentStale = false;
+  /** Stops listening to the headset session's visibility (the mixer follows it). */
+  private unwatchSession: (() => void) | null = null;
   private running = false;
   private disposed = false;
   private frameErrors = 0;
@@ -1311,6 +1334,67 @@ export class SceneEngine {
     this.scene.add(rig.root);
     this.idle.setBuckets(TABLE_IDLE_EVERY);
     this.refreshMaterials();
+    this.tableWarmth = "cold";
+
+    // The room is the player's own: no hall ambience, the score steps back,
+    // and the next battleground's score is decoded before the menu asks for it.
+    audio.setTableMode(true);
+    audio.prefetchScore(nextArenaOf(this.arena));
+    const session = this.renderer.xr.getSession();
+    if (session) {
+      const follow = (): void => audio.setSessionVisibility(session.visibilityState);
+      session.addEventListener("visibilitychange", follow);
+      follow();
+      this.unwatchSession = () => session.removeEventListener("visibilitychange", follow);
+    }
+  }
+
+  /**
+   * Compiles the programs of everything already in the scene (board, figures,
+   * panels, room) for the table before the board is shown. Effects built
+   * during a fight (bursts, sparks, debris) are not in the scene yet and still
+   * compile when they first appear.
+   *
+   * Nothing a table frame draws matches a 2D program: the hall's lights and fog
+   * are gone, shadows are off, tone mapping moves into the shader (no
+   * post-processing) and the headset's multiview target adds a view-count
+   * define. Left alone, all of it compiled on the first frame the board was
+   * visible, a stall the player saw as the board appearing. So on the first
+   * headset frame (the XR target is bound, so multiview is in the key) the
+   * scene is compiled as it will look once placed: the rig shown, the hall's
+   * put-away scenery left out. With KHR_parallel_shader_compile the driver
+   * links in the background while the reticle is still searching.
+   */
+  private warmTablePrograms(): void {
+    const rig = this.table;
+    const restore = this.tableRestore;
+    const xr = this.renderer.xr;
+    if (!rig || !restore || this.tableWarmth !== "cold") return;
+    // Only inside a headset frame: outside one the multiview define is missing.
+    // (Public on WebXRManager, missing from its typings.)
+    const target = xr.isPresenting ? (xr as unknown as { getRenderTarget(): THREE.WebGLRenderTarget | null }).getRenderTarget() : null;
+    if (!target || this.renderer.getRenderTarget() !== target) return;
+    this.tableWarmth = "compiling";
+    const children = this.scene.children;
+    const putAway = new Set<THREE.Object3D>(restore.scenery.map(([group]) => group));
+    const shown = rig.root.visible;
+    // Swapped in place (no add/remove events, no reparenting) and put back
+    // straight after the synchronous part of the compile.
+    this.scene.children = children.filter((child) => !putAway.has(child));
+    rig.root.visible = true;
+    let compiled: Promise<unknown>;
+    try {
+      compiled = this.renderer.compileAsync(this.scene, this.camera);
+    } catch (error) {
+      console.warn("[scene] could not warm the table's shaders", error);
+      compiled = Promise.resolve();
+    } finally {
+      rig.root.visible = shown;
+      this.scene.children = children;
+    }
+    void compiled.then(() => {
+      if (this.tableWarmth === "compiling") this.tableWarmth = "warm";
+    });
   }
 
   /** Back to the 2D hall exactly as it was. */
@@ -1320,6 +1404,10 @@ export class SceneEngine {
     if (!rig || !restore) return;
     this.table = null;
     this.tableRestore = null;
+    this.unwatchSession?.();
+    this.unwatchSession = null;
+    audio.setSessionVisibility(null);
+    audio.setTableMode(false);
     this.clearSelection();
     this.scene.add(this.world);
     rig.root.removeFromParent();
@@ -1344,7 +1432,9 @@ export class SceneEngine {
     this.controls.enabled = true;
     this.controls.autoRotate = restore.autoRotate;
     this.idle.setBuckets(QUALITY_SETTINGS[this.preset].idleUpdateEvery);
-    this.refreshMaterials();
+    // The battleground changed on the table: its probe was held back until now.
+    if (this.environmentStale) this.applyEnvironment();
+    else this.refreshMaterials();
     this.handleResize();
     // A crown still unanswered when the headset came off: ask in the hall.
     if (this.promotionResolve && this.promotionColor) this.buildPromotionPicker(this.promotionColor);
@@ -1489,6 +1579,12 @@ export class SceneEngine {
         return piece ? listDrawables(piece.object) : null;
       },
       preset: () => this.preset,
+      /** Every shader program alive, by id: a new id is a compile. */
+      programs: () => (this.renderer.info.programs ?? []).map((program) => ({ id: program.id, key: program.cacheKey })),
+      /** Move beats running now, and how long the last one took. */
+      moving: () => this.movesInFlight,
+      lastBeat: () => this.lastBeat,
+      tableWarmth: () => this.tableWarmth,
     };
     (window as unknown as { __scene: typeof stats }).__scene = stats;
   }
@@ -1500,6 +1596,7 @@ export class SceneEngine {
     if (this.disposed) return;
     this.rebuildPieces();
     this.callbacks.onReady();
+    window.dispatchEvent(new Event(GAME_READY_EVENT));
     // The magazine, fetched behind the game: one sculpt per round in the army's
     // barrels, a couple of thousand triangles each, and none of them needed until
     // somebody pulls a trigger. Until a sculpt lands the round is turned
@@ -1585,6 +1682,7 @@ export class SceneEngine {
     if (this.tactical) this.alignTokens();
 
     if (this.table) {
+      if (this.tableWarmth === "cold") this.warmTablePrograms();
       // The headset owns the camera, and post-processing would switch off
       // fixed foveation: draw straight to the XR framebuffer. Light must add to
       // the room, not darken it (see lightBlend.ts).
@@ -1740,6 +1838,7 @@ export class SceneEngine {
    * the single most likely cause of an all-black scene.
    */
   private applyEnvironment(): void {
+    this.environmentStale = false;
     const look = ARENA_LOOKS[this.arena];
     const previous = this.environmentMap;
     this.environmentMap = null;
@@ -1878,10 +1977,13 @@ export class SceneEngine {
 
   private async animateMove(event: MoveEvent): Promise<void> {
     this.movesInFlight += 1;
+    const startedMs = performance.now();
+    const startedS = this.elapsed;
     try {
       await this.runMove(event);
     } finally {
       this.movesInFlight -= 1;
+      this.lastBeat = { wallMs: performance.now() - startedMs, engineS: this.elapsed - startedS, capture: Boolean(event.capture) };
       // A quality change that arrived mid-fight was held back; run it now.
       if (this.movesInFlight === 0 && this.rebuildPending) this.rebuildPieces();
     }
@@ -2044,7 +2146,9 @@ export class SceneEngine {
    * in the background at start-up, but a request dropped during the opening
    * burst would otherwise leave a figure that kills without ever swinging — so
    * a capture asks for them again here, behind a ceiling that keeps a bad
-   * network from stopping the game.
+   * network from stopping the game. On a table the ceiling is short: a player
+   * holding a figure in their hand notices a frozen board long before a fight
+   * that starts without its swing.
    */
   private async armCombat(attacker: PieceView, victim: PieceView): Promise<void> {
     const ready = attacker.hasClip("attack") && (victim.hasClip("death") || !victim.hasAnimations);
@@ -2054,7 +2158,7 @@ export class SceneEngine {
         this.factory.ensureClip(attacker.color, attacker.kind, "attack"),
         this.factory.ensureClip(victim.color, victim.kind, "death"),
       ]),
-      wait(2.4),
+      wait(this.table ? TABLE_CLIP_WAIT_S : 2.4),
     ]);
   }
 
@@ -4332,7 +4436,13 @@ export class SceneEngine {
     this.introSkipped = false;
     this.interactive = false;
     this.controls.enabled = false;
-    this.postfx.setCinematic(true, 7);
+
+    // In a headset's browser the point of the visit is "Play on your table",
+    // and the menu (with that button) waits for the fly-in: land on the
+    // playing shot at once. A browser slow to answer gets the fly-in.
+    const headset = await Promise.race([isTableXrSupported(), wait(0.5).then(() => false)]);
+    if (this.disposed) return;
+    if (!headset) this.postfx.setCinematic(true, 7);
 
     // The fly-in is a performance and keeps its authored path, but the shot it
     // lands on is the one the player will play from — so that one is solved for
@@ -4340,6 +4450,14 @@ export class SceneEngine {
     this.framedShot = CAMERA_SHOTS.white;
     const rest = this.framingFor(CAMERA_SHOTS.white);
     this.adoptFraming(rest);
+    if (headset) {
+      this.camera.position.copy(rest.position);
+      this.controls.target.copy(rest.target);
+      this.introPlaying = false;
+      this.interactive = true;
+      this.controls.enabled = true;
+      return;
+    }
     const path: CameraShot[] = [
       { position: new THREE.Vector3(13.5, 2.1, 12.5), target: new THREE.Vector3(5, 3.2, 3.5) },
       { position: new THREE.Vector3(8.5, 2.4, 10.5), target: new THREE.Vector3(0, 1.4, 0) },
@@ -5332,6 +5450,14 @@ export class SceneEngine {
       this.applyTacticalAtmosphere();
     }
 
+    if (this.table) {
+      // Mid-session, a new reflection probe (a PMREM bake) and a material
+      // refresh would stall the headset for a moment the player feels. The
+      // table keeps the probe it has; the hall gets the new one on the way back.
+      this.environmentStale = true;
+      audio.prefetchScore(nextArenaOf(theme));
+      return;
+    }
     this.applyEnvironment();
   }
 

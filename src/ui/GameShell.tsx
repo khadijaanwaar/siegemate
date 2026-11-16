@@ -274,8 +274,8 @@ export function GameShell() {
     premoveDepth: initialPremoveDepth,
     thinkFloorMs: initialThinkFloor,
     rankBadges: true,
-    muted: false,
-    music: true,
+    muted: audio.isMuted,
+    music: audio.isMusicEnabled,
     safeMode: initialRender.safeMode,
     brightness: initialRender.brightness,
   }));
@@ -433,9 +433,6 @@ export function GameShell() {
     engine.setRankBadges(settings.rankBadges);
     engine.setSafeMode(settings.safeMode);
     engine.setBrightness(settings.brightness);
-    audio.setMuted(settings.muted);
-    audio.setMusicMuted(!settings.music);
-    mixedRef.current?.setSound({ sound: !settings.muted, music: settings.music });
     saveRenderPrefs({ safeMode: settings.safeMode, brightness: settings.brightness });
     saveArmyPrefs(settings.skins);
     saveSeatSwing(settings.rotateBoard);
@@ -443,6 +440,20 @@ export function GameShell() {
     savePremoveDepth(settings.premoveDepth);
     saveThinkFloor(settings.thinkFloorMs);
   }, [settings, phase, controller]);
+
+  // Only when the toggle itself changes: the effect above runs on every
+  // setting (the headset's battleground button included) and must not undo a
+  // mute set from the headset. The mixer remembers the choice itself.
+  useEffect(() => {
+    audio.setMuted(settings.muted);
+  }, [settings.muted]);
+  useEffect(() => {
+    audio.setMusicEnabled(settings.music);
+  }, [settings.music]);
+  // The headset menu shows (and toggles) the same two settings.
+  useEffect(() => {
+    mixedRef.current?.setSound({ sound: !settings.muted, music: settings.music });
+  }, [settings.muted, settings.music]);
 
   // ------------------------------------------------------------- attract mode
   const stopAttract = useCallback(() => {
@@ -561,7 +572,7 @@ export function GameShell() {
       boardSize: () => mixedRef.current?.boardSize ?? null,
       boardHeight: () => mixedRef.current?.boardHeight ?? null,
       /** What the mixer was last told: the 2D settings, whichever side changed them. */
-      audio: () => ({ muted: audio.isMuted, music: !audio.isMusicMuted }),
+      audio: () => ({ muted: audio.isMuted, music: audio.isMusicEnabled }),
       ui: () => mixedRef.current?.debugUi() ?? null,
       press: (id: string) => mixedRef.current?.debugPress(id) ?? false,
       panels: () => mixedRef.current?.debugPanels() ?? {},

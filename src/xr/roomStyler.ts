@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { ArenaTheme } from "../scene/arena";
+import { toLightBlending } from "../scene/lightBlend";
 import { ROOM_THEMES, spawnParticle, stepParticle, type BoardArea, type RoomWeather } from "./roomTheme";
 
 /** Most particles any theme asks for (the pool is built once). */
@@ -45,6 +46,8 @@ export class RoomStyler {
   private fade = 1;
   private readonly from = { alpha: 0, color: new THREE.Color(), glow: 0, glowColor: new THREE.Color(), weather: 0 };
   private readonly random = Math.random;
+  /** Scratch for the per-frame colour fades: the headset loop allocates nothing. */
+  private readonly toColor = new THREE.Color();
 
   constructor() {
     this.group.name = "xr_room";
@@ -65,11 +68,12 @@ export class RoomStyler {
         color: 0xffffff,
         transparent: true,
         opacity: 0,
-        blending: THREE.AdditiveBlending,
         depthWrite: false,
         toneMapped: false,
       }),
     );
+    // Light pooling on the table adds to the room; it never darkens it (see lightBlend.ts).
+    toLightBlending(this.glow.material);
     this.glow.renderOrder = -5;
 
     const dotGeometry = new THREE.BufferGeometry();
@@ -96,8 +100,8 @@ export class RoomStyler {
     return this.theme;
   }
 
-  /** Switches the room to a battleground, crossfading from the last one. */
-  setTheme(theme: ArenaTheme, head: THREE.Vector3, board: BoardArea | null): void {
+  /** Switches the room to a battleground, crossfading from the last one. `headYaw`: where the player faces. */
+  setTheme(theme: ArenaTheme, head: THREE.Vector3, board: BoardArea | null, headYaw: number | null = null): void {
     if (theme === this.theme) return;
     this.from.alpha = this.veil.material.opacity;
     this.from.color.copy(this.veil.material.color);
@@ -109,10 +113,15 @@ export class RoomStyler {
     const { weather } = ROOM_THEMES[theme];
     this.kind = weather.kind;
     this.count = Math.min(POOL, weather.count);
-    for (let i = 0; i < this.count; i += 1) spawnParticle(this.kind, head, board, this.random, this.positions[i]);
+    for (let i = 0; i < this.count; i += 1) spawnParticle(this.kind, head, board, this.random, this.positions[i], true, headYaw);
     const dotsMaterial = this.dots.material;
     dotsMaterial.color.setHex(weather.color);
-    dotsMaterial.blending = this.kind === "embers" || this.kind === "pollen" ? THREE.AdditiveBlending : THREE.NormalBlending;
+    // Embers and pollen glow: light that adds to the room. Set here rather than
+    // left to the engine's per-frame pass, which converts each material once
+    // and would never see this one flipped back to plain additive, which
+    // darkens passthrough.
+    if (this.kind === "embers" || this.kind === "pollen") toLightBlending(dotsMaterial);
+    else dotsMaterial.blending = THREE.NormalBlending;
     dotsMaterial.size = this.kind === "sand" ? 0.006 : this.kind === "embers" ? 0.01 : 0.014;
     dotsMaterial.needsUpdate = true;
     this.streaks.material.color.setHex(weather.color);
@@ -122,8 +131,12 @@ export class RoomStyler {
     this.streaks.geometry.setDrawRange(0, this.count * 2);
   }
 
-  /** Every headset frame. `board` keeps the weather off the pieces; `table` is where the glow lies. */
-  update(dt: number, head: THREE.Vector3, board: BoardArea | null, tableYaw: number): void {
+  /**
+   * Every headset frame. `board` keeps the weather off the pieces and is where
+   * the glow lies; `headYaw` keeps it out of the player's face (without it the
+   * board's direction stands in for the gaze).
+   */
+  update(dt: number, head: THREE.Vector3, board: BoardArea | null, tableYaw: number, headYaw: number | null = null): void {
     if (!this.theme) return;
     const theme = ROOM_THEMES[this.theme];
     this.fade = Math.min(1, this.fade + dt / FADE_S);
@@ -131,7 +144,7 @@ export class RoomStyler {
 
     this.veil.position.copy(head);
     this.veil.material.opacity = THREE.MathUtils.lerp(this.from.alpha, theme.veil.alpha, t);
-    this.veil.material.color.copy(this.from.color).lerp(new THREE.Color(theme.veil.color), t);
+    this.veil.material.color.copy(this.from.color).lerp(this.toColor.setHex(theme.veil.color), t);
     this.veil.visible = this.veil.material.opacity > 0.002;
 
     if (board) {
@@ -140,7 +153,7 @@ export class RoomStyler {
       this.glow.rotation.y = tableYaw;
       this.glow.scale.setScalar(board.half * 2 * 1.9);
       this.glow.material.opacity = THREE.MathUtils.lerp(this.from.glow, theme.glow.intensity, t);
-      this.glow.material.color.copy(this.from.glowColor).lerp(new THREE.Color(theme.glow.color), t);
+      this.glow.material.color.copy(this.from.glowColor).lerp(this.toColor.setHex(theme.glow.color), t);
     } else {
       this.glow.visible = false;
     }
@@ -155,7 +168,7 @@ export class RoomStyler {
     for (let i = 0; i < this.count; i += 1) {
       this.phases[i] += dt;
       const point = this.positions[i];
-      stepParticle(this.kind, point, dt, this.phases[i], head, board, this.random);
+      stepParticle(this.kind, point, dt, this.phases[i], head, board, this.random, headYaw);
       if (this.kind === "rain") {
         streakArray.setXYZ(i * 2, point.x, point.y, point.z);
         streakArray.setXYZ(i * 2 + 1, point.x - 0.012, point.y + 0.09, point.z);

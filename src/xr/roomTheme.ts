@@ -15,7 +15,16 @@ export interface RoomTheme {
 /** The room is never dimmed past this: the player must always see where they are. */
 export const MAX_VEIL_ALPHA = 0.5;
 /** Weather never comes closer than this to the eyes. */
-export const HEAD_CLEARANCE_M = 0.35;
+export const HEAD_CLEARANCE_M = 0.7;
+/**
+ * ...nor into the column in front of them, this deep and this wide either side
+ * of where the player faces. Pitch is ignored on purpose: looking down at the
+ * board, the space between the eyes and the table stays clear too.
+ */
+export const FORWARD_CLEARANCE_M = 1.2;
+export const FORWARD_HALF_ANGLE = THREE.MathUtils.degToRad(35);
+/** Sand drifts sideways at this (m/s), settling slowly: a gale across the eyes reads as the room sliding. */
+export const SAND_SPEED = 0.28;
 /** The weather fills a cylinder this wide around the player... */
 const FIELD_RADIUS_M = 1.8;
 /** ...from this far below the eyes to this far above them. */
@@ -41,7 +50,7 @@ export const ROOM_THEMES: Record<ArenaTheme, RoomTheme> = {
   },
   sands: {
     veil: { color: 0x2e200b, alpha: 0.12 },
-    weather: { kind: "sand", count: 380, color: 0xf0dca8, opacity: 0.45 },
+    weather: { kind: "sand", count: 300, color: 0xf0dca8, opacity: 0.45 },
     glow: { color: 0xffc46b, intensity: 0.4 },
   },
   frost: {
@@ -51,7 +60,7 @@ export const ROOM_THEMES: Record<ArenaTheme, RoomTheme> = {
   },
   storm: {
     veil: { color: 0x090d14, alpha: 0.34 },
-    weather: { kind: "rain", count: 480, color: 0xd6e4f5, opacity: 0.5 },
+    weather: { kind: "rain", count: 220, color: 0xd6e4f5, opacity: 0.45 },
     glow: { color: 0x9fc2ff, intensity: 0.3 },
   },
   dusk: {
@@ -70,8 +79,29 @@ export interface BoardArea {
   half: number;
 }
 
-function inHead(point: THREE.Vector3, head: THREE.Vector3): boolean {
-  return point.distanceTo(head) < HEAD_CLEARANCE_M;
+/**
+ * Where the player is and which way they face (`yaw`: 0 looks down -z, as the
+ * head's yaw is measured in the XR layer). Without a yaw, the board stands in
+ * for the gaze: during play that is where the player looks.
+ */
+function facing(head: THREE.Vector3, board: BoardArea | null, yaw: number | null): number | null {
+  if (yaw !== null) return yaw;
+  if (!board) return null;
+  return Math.atan2(-(board.center.x - head.x), -(board.center.z - head.z));
+}
+
+/** Too close to the eyes, or in the column straight in front of them. */
+export function crowdsTheFace(point: THREE.Vector3, head: THREE.Vector3, yaw: number | null): boolean {
+  if (point.distanceTo(head) < HEAD_CLEARANCE_M) return true;
+  if (yaw === null) return false;
+  const dx = point.x - head.x;
+  const dz = point.z - head.z;
+  const flat = Math.hypot(dx, dz);
+  if (flat >= FORWARD_CLEARANCE_M) return false;
+  if (flat < 1e-6) return true;
+  // Cosine of the angle between the flat offset and the facing direction.
+  const along = (-Math.sin(yaw) * dx - Math.cos(yaw) * dz) / flat;
+  return along > Math.cos(FORWARD_HALF_ANGLE);
 }
 
 function overBoard(point: THREE.Vector3, board: BoardArea | null): boolean {
@@ -91,7 +121,9 @@ export function spawnParticle(
   random: () => number,
   out: THREE.Vector3,
   anywhere = true,
+  yaw: number | null = null,
 ): THREE.Vector3 {
+  const face = facing(head, board, yaw);
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const angle = random() * Math.PI * 2;
     const radius = Math.sqrt(random()) * FIELD_RADIUS_M;
@@ -99,16 +131,17 @@ export function spawnParticle(
     const top = head.y + FIELD_ABOVE_M;
     const height = anywhere ? bottom + random() * (top - bottom) : kind === "embers" ? bottom : top;
     out.set(head.x + Math.cos(angle) * radius, height, head.z + Math.sin(angle) * radius);
-    if (!inHead(out, head) && !overBoard(out, board)) return out;
+    if (!crowdsTheFace(out, head, face) && !overBoard(out, board)) return out;
   }
-  // Out at the rim, level with the eyes: always clear of both.
-  return out.set(head.x + FIELD_RADIUS_M, head.y, head.z);
+  // Out at the rim, level with the eyes and behind the player: clear of all three.
+  const behind = face ?? 0;
+  return out.set(head.x + Math.sin(behind) * FIELD_RADIUS_M, head.y, head.z + Math.cos(behind) * FIELD_RADIUS_M);
 }
 
 /**
- * One particle's step. Snow drifts down and sways, rain drops fast, sand is
- * carried sideways, pollen wanders, embers rise. Anything leaving the field,
- * reaching the board or entering the head's clearance starts over.
+ * One particle's step. Snow drifts down and sways, rain drops, sand drifts
+ * sideways, pollen wanders, embers rise. Anything leaving the field, reaching
+ * the board or crowding the face starts over somewhere else.
  */
 export function stepParticle(
   kind: RoomWeather,
@@ -118,6 +151,7 @@ export function stepParticle(
   head: THREE.Vector3,
   board: BoardArea | null,
   random: () => number,
+  yaw: number | null = null,
 ): void {
   switch (kind) {
     case "snow":
@@ -125,12 +159,12 @@ export function stepParticle(
       point.x += Math.sin(phase) * 0.05 * dt;
       break;
     case "rain":
-      point.y -= 3.2 * dt;
-      point.x += 0.4 * dt;
+      point.y -= 2.2 * dt;
+      point.x += 0.15 * dt;
       break;
     case "sand":
-      point.x += 1.6 * dt;
-      point.y -= 0.12 * dt;
+      point.x += SAND_SPEED * dt;
+      point.y -= 0.04 * dt;
       break;
     case "pollen":
       point.x += Math.sin(phase) * 0.04 * dt;
@@ -146,11 +180,9 @@ export function stepParticle(
   }
   const flat = Math.hypot(point.x - head.x, point.z - head.z);
   const outside = flat > FIELD_RADIUS_M || point.y < head.y - FIELD_BELOW_M || point.y > head.y + FIELD_ABOVE_M;
-  if (outside || overBoard(point, board)) spawnParticle(kind, head, board, random, point, false);
-  if (inHead(point, head)) {
-    // Push it out to the edge of the clearance rather than through the eyes.
-    const away = point.clone().sub(head);
-    if (away.lengthSq() < 1e-6) away.set(1, 0, 0);
-    point.copy(head).add(away.setLength(HEAD_CLEARANCE_M + 0.01));
+  if (outside || overBoard(point, board) || crowdsTheFace(point, head, facing(head, board, yaw))) {
+    // Falling kinds start again at the top and embers at the bottom; sand and
+    // pollen hang in the air, so they come back anywhere in the field.
+    spawnParticle(kind, head, board, random, point, kind === "sand" || kind === "pollen", yaw);
   }
 }
