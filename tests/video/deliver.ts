@@ -27,12 +27,19 @@ if (cmd === "stills") {
   ff(["-i", mp4, "-vf", `select=not(mod(n\\,${every})),scale=480:-2,tile=4x3:padding=4:color=black`, "-frames:v", "1", "-update", "1", path.join(o.outDir, `${name}-contact.png`)]);
   console.log(`[film] ${name}: stills and contact sheet in ${o.outDir}`);
 } else if (cmd === "sound") {
-  // A rough track of the game's own sound: every sample the game started during the shot (from the
-  // event log), laid in at its time from the built game's files. The game's synthesized sounds
-  // (oscillator blips and thumps) and its mixing levels are not in it; long samples (the score)
-  // go in quieter. Muxed into <shot>.mp4 as AAC; the picture is copied.
+  // The game's own sound under the clip, as AAC; the picture is copied. render.ts leaves <shot>.wav: the game's
+  // whole mix (samples, synthesized sounds, its buses and limiter) rendered offline for exactly the recorded
+  // stretch. Without one (an older render), a rough track: every sample the game started, laid in at its time.
   const name = resolveShot(arg ?? "");
   const mp4 = path.join(o.outDir, `${name}.mp4`);
+  const wav = path.join(o.outDir, `${name}.wav`);
+  if (fs.existsSync(wav) && fs.statSync(wav).mtimeMs >= fs.statSync(mp4).mtimeMs - 60_000) {
+    const tmp = mp4.replace(/\.mp4$/, ".sound.mp4");
+    ff(["-i", mp4, "-i", wav, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", tmp]);
+    fs.renameSync(tmp, mp4);
+    console.log(`[film] ${name}: the game's own sound (offline render) laid in`);
+    process.exit(0);
+  }
   const side = JSON.parse(fs.readFileSync(path.join(o.outDir, `${name}.json`), "utf8")) as { delivery: { seconds: number }; events: Array<{ t: number; type: string; file?: string | null; offset?: number; seconds?: number; loop?: boolean; rate?: number }> };
   const total = side.delivery.seconds;
   const sounds = side.events.filter((e) => e.type === "sound" && e.file && fs.existsSync(path.join("film-out/.build", e.file)));

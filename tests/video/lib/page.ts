@@ -104,6 +104,86 @@ export function filmInit(): void {
       return track(p);
     };
   }
+
+  // The game's sound, on the frame clock. Its AudioContext is an OfflineAudioContext in a wrapper whose
+  // currentTime follows the film clock (seconds since it was made), so every sound the game schedules,
+  // samples and synthesized ones alike, lands at its place on one long timeline; after the shot
+  // `__filmAudioRender` renders that timeline and returns the recorded stretch as a WAV.
+  const AUDIO_RATE = 48000;
+  const AUDIO_SECONDS = 220;
+  w.__filmAudioContexts = [] as Array<{ ctx: OfflineAudioContext; born: number }>;
+  const RealOffline = w.OfflineAudioContext;
+  if (RealOffline) {
+    const FilmAudioContext = function (this: unknown) {
+      const ctx = new RealOffline(2, AUDIO_RATE * AUDIO_SECONDS, AUDIO_RATE) as OfflineAudioContext;
+      const born = performance.now();
+      w.__filmAudioContexts.push({ ctx, born });
+      return new Proxy(ctx, {
+        get(target, key) {
+          if (key === "currentTime") return Math.max(0, (performance.now() - born) / 1000);
+          if (key === "state") return "running";
+          if (key === "baseLatency" || key === "outputLatency") return 0;
+          if (key === "resume" || key === "suspend" || key === "close") return () => Promise.resolve();
+          const v = Reflect.get(target, key, target);
+          return typeof v === "function" ? v.bind(target) : v;
+        },
+        set(target, key, value) {
+          return Reflect.set(target, key, value, target);
+        },
+      });
+    };
+    w.AudioContext = FilmAudioContext;
+    w.webkitAudioContext = FilmAudioContext;
+  }
+  /** Seconds on the audio timeline now (the first context's). */
+  w.__filmAudioNow = () => {
+    const c = w.__filmAudioContexts[0];
+    return c ? (performance.now() - c.born) / 1000 : null;
+  };
+  /** Render the game's sound and return [from, from + seconds) as a 16-bit stereo WAV, base64 (null: no sound). */
+  w.__filmAudioRender = async (from: number, seconds: number): Promise<string | null> => {
+    const list = w.__filmAudioContexts as Array<{ ctx: OfflineAudioContext; born: number }>;
+    if (!list.length) return null;
+    const n = Math.round(seconds * AUDIO_RATE);
+    const mix = [new Float32Array(n), new Float32Array(n)];
+    const first = list[0]!.born;
+    for (const { ctx, born } of list) {
+      const buf = await ctx.startRendering();
+      const offset = Math.round((from + (first - born) / 1000) * AUDIO_RATE);
+      for (let ch = 0; ch < 2; ch++) {
+        const src = buf.getChannelData(Math.min(ch, buf.numberOfChannels - 1));
+        for (let i = 0; i < n; i++) {
+          const j = offset + i;
+          if (j >= 0 && j < src.length) mix[ch]![i]! += src[j]!;
+        }
+      }
+    }
+    const data = new DataView(new ArrayBuffer(44 + n * 4));
+    const str = (o: number, s: string) => [...s].forEach((c, i) => data.setUint8(o + i, c.charCodeAt(0)));
+    str(0, "RIFF");
+    data.setUint32(4, 36 + n * 4, true);
+    str(8, "WAVE");
+    str(12, "fmt ");
+    data.setUint32(16, 16, true);
+    data.setUint16(20, 1, true);
+    data.setUint16(22, 2, true);
+    data.setUint32(24, AUDIO_RATE, true);
+    data.setUint32(28, AUDIO_RATE * 4, true);
+    data.setUint16(32, 4, true);
+    data.setUint16(34, 16, true);
+    str(36, "data");
+    data.setUint32(40, n * 4, true);
+    for (let i = 0; i < n; i++) {
+      for (let ch = 0; ch < 2; ch++) {
+        const v = Math.max(-1, Math.min(1, mix[ch]![i]!));
+        data.setInt16(44 + i * 4 + ch * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+      }
+    }
+    const bytes = new Uint8Array(data.buffer);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
   const Source = w.AudioBufferSourceNode;
   if (Source?.prototype?.start) {
     const start = Source.prototype.start;

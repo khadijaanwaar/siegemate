@@ -81,9 +81,19 @@ try {
   const r0 = Date.now();
   const before = { ...ctx.stats };
   ctx.startPlay(shot.firstView(data), encoder, shot.label === undefined ? EMULATOR_LABEL : shot.label);
+  // Where the clip starts on the game's sound timeline (frame 0 is drawn one step later).
+  const audioFrom = (await page.evaluate(() => (window as any).__filmAudioNow())) as number | null;
   await shot.play(ctx, data);
   const recordMs = Date.now() - r0;
   await encoder.close();
+  // The game's own sound for exactly the recorded stretch, rendered offline (lib/page.ts).
+  const wavPath = path.join(o.outDir, `${shot.name}.wav`);
+  if (audioFrom !== null) {
+    const wav = (await page.evaluate(([from, secs]) => (window as any).__filmAudioRender(from, secs), [audioFrom + 1 / SIM_HZ, ctx.time()] as const)) as string | null;
+    if (wav) fs.writeFileSync(wavPath, Buffer.from(wav, "base64"));
+  } else {
+    log(`${shot.name}: the game made no AudioContext; no game sound`);
+  }
   const preset = await page.evaluate(() => (window as any).__scene.preset());
   if (preset !== o.gameQuality) throw new Error(`the game's quality preset moved from ${o.gameQuality} to ${preset} during the shot`);
   const captured = ctx.stats.captured;
