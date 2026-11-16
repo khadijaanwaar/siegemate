@@ -231,14 +231,24 @@ export async function installRoom(o: { jpegBase64: string; yawDeg: number; table
   const w = window as any;
   const d = w.__iwer;
   if (!d) return { ok: false, why: "no emulator (window.__iwer)" };
-  const canvas = document.createElement("canvas");
+  let canvas = document.createElement("canvas");
   canvas.style.position = "absolute";
   canvas.style.inset = "0";
   canvas.style.width = "100%";
   canvas.style.height = "100%";
-  w.__filmOpaque = true;
-  const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, preserveDrawingBuffer: false }) as WebGL2RenderingContext | null;
-  w.__filmOpaque = false;
+  // Right after another GPU test the GPU process can refuse a new context for a moment: a few tries.
+  let gl: WebGL2RenderingContext | null = null;
+  for (let attempt = 0; attempt < 6 && !gl; attempt++) {
+    if (attempt) await new Promise((r) => (w.__vt?.realSetTimeout ?? setTimeout)(r, 750));
+    const c = attempt ? document.createElement("canvas") : canvas;
+    w.__filmOpaque = true;
+    gl = c.getContext("webgl2", { alpha: false, antialias: false, preserveDrawingBuffer: false }) as WebGL2RenderingContext | null;
+    w.__filmOpaque = false;
+    if (gl && c !== canvas) {
+      c.style.cssText = canvas.style.cssText;
+      canvas = c;
+    }
+  }
   if (!gl) return { ok: false, why: "no WebGL2 for the room canvas" };
   const bin = atob(o.jpegBase64);
   const bytes = new Uint8Array(bin.length);
