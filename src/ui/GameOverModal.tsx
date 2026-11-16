@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Copy, Home, Pause, RotateCw, Swords } from "lucide-react";
+import { Check, Copy, Home, Pause, RotateCw, Share2, Swords } from "lucide-react";
 
 import { DEMO_REMATCH_DELAY_MS } from "../core/gameController";
 import type { PlayerStats } from "../core/stats";
@@ -36,6 +36,8 @@ interface GameOverModalProps {
   showcase?: ShowcaseOutcome | null;
   onRematch: () => void;
   onMenu: () => void;
+  /** Opens the battle card and the replay link (absent when there is nothing to share). */
+  onShare?: () => void;
 }
 
 const REASON_COPY: Record<EndReason, string> = {
@@ -67,6 +69,7 @@ export function GameOverModal({
   stats,
   onRematch,
   onMenu,
+  onShare,
 }: GameOverModalProps) {
   const [copied, setCopied] = useState(false);
   const headlineId = useId();
@@ -138,9 +141,14 @@ export function GameOverModal({
           <button type="button" className="mc-btn mc-btn-lg" onClick={onMenu} aria-label="Back to the menu">
             <Home size={18} aria-hidden="true" /> Menu
           </button>
+          {onShare ? (
+            <button type="button" className="mc-btn mc-btn-md" onClick={onShare}>
+              <Share2 size={18} aria-hidden="true" /> Share
+            </button>
+          ) : null}
           <button
             type="button"
-            className="mc-btn mc-btn-ghost mc-btn-md mc-dialog-copy"
+            className={`mc-btn mc-btn-ghost mc-btn-md${onShare ? "" : " mc-dialog-copy"}`}
             onClick={() => void copyPgn()}
           >
             {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
