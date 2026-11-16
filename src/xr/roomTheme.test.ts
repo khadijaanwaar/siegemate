@@ -69,12 +69,14 @@ describe("weather particles", () => {
     const random = seeded(7);
     const point = new THREE.Vector3();
     for (const yaw of [0, Math.PI / 2, -2.4, Math.PI]) {
+      const bad = { head: 0, front: 0, board: 0 };
       for (let i = 0; i < 2000; i += 1) {
         spawnParticle("snow", head, board, random, point, true, yaw);
-        expect(point.distanceTo(head)).toBeGreaterThanOrEqual(HEAD_CLEARANCE_M);
-        expect(inFront(point, yaw)).toBe(false);
-        expect(overBoard(point)).toBe(false);
+        if (point.distanceTo(head) < HEAD_CLEARANCE_M) bad.head += 1;
+        if (inFront(point, yaw)) bad.front += 1;
+        if (overBoard(point)) bad.board += 1;
       }
+      expect(bad, `yaw ${yaw}`).toEqual({ head: 0, front: 0, board: 0 });
     }
   });
 
@@ -82,11 +84,12 @@ describe("weather particles", () => {
     const random = seeded(5);
     const point = new THREE.Vector3();
     const towardBoard = Math.atan2(-(board.center.x - head.x), -(board.center.z - head.z));
+    let crowded = 0;
     for (let i = 0; i < 2000; i += 1) {
       spawnParticle("rain", head, board, random, point);
-      expect(point.distanceTo(head)).toBeGreaterThanOrEqual(HEAD_CLEARANCE_M);
-      expect(inFront(point, towardBoard)).toBe(false);
+      if (point.distanceTo(head) < HEAD_CLEARANCE_M || inFront(point, towardBoard)) crowded += 1;
     }
+    expect(crowded).toBe(0);
   });
 
   it("never step into the face, whatever the weather", () => {
