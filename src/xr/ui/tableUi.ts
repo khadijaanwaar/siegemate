@@ -571,7 +571,8 @@ export class TableUi {
     place(this.panels.coach, new THREE.Vector3(0, 0.11, -half - 0.03), "player");
     place(this.panels.slab, new THREE.Vector3(half + 0.11, 0.02, half - 0.06), "tilt");
     place(this.panels.perf, new THREE.Vector3(-half - 0.11, 0.02, half - 0.06), "tilt");
-    place(this.panels.menu, new THREE.Vector3(half + 0.13, 0.2, half - 0.12), "player");
+    // Behind and above the slab, so the open card never stands between the eyes (or a ray) and the slab's Menu button.
+    place(this.panels.menu, new THREE.Vector3(half + 0.15, 0.22, half - 0.2), "player");
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
     // On the player's edge of the board, low: in poke reach, clear of the far rank where the pawn stands.
     place(this.panels.promote, new THREE.Vector3(0, 0.07, half + 0.05), "player");
