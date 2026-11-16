@@ -69,7 +69,12 @@ export class ProgramKeeper {
   /** Geometries and textures the seeds own (learned stand-ins borrow theirs). */
   private readonly seedResources: Array<THREE.BufferGeometry | THREE.Texture> = [];
 
-  /** @param compile Compiles an object for the frame being drawn. */
+  /**
+   * @param compile Compiles an object for the frame being drawn. The engine
+   *   compiles it once per set of lights a table frame can have, so a
+   *   stand-in also holds the programs its material needs while a light is
+   *   on (see `SceneEngine.compileForEachLightSet`).
+   */
   constructor(
     private readonly renderer: THREE.WebGLRenderer,
     private readonly compile: (object: THREE.Object3D) => void,

@@ -1219,7 +1219,7 @@ export class SceneEngine {
     this.scene.add(this.landmarks.group);
     this.world.name = "game_world";
     this.keeper = new ProgramKeeper(this.renderer, (object) => {
-      this.renderer.compile(object, this.camera, this.scene);
+      this.compileForEachLightSet(() => this.renderer.compile(object, this.camera, this.scene));
     });
     this.scene.add(this.keeper.group);
     this.scene.add(this.world);
@@ -1366,11 +1366,36 @@ export class SceneEngine {
   }
 
   /**
+   * Runs `compile` once for each set of lights a table frame can have.
+   *
+   * The light counts are part of every program's key, unlit materials
+   * included, and the check alarm's lamp is only in the scene while a king is
+   * in check (its group hides when the alarm is out, so the lamp costs nothing
+   * on the other turns). Without this the first check compiled the whole board
+   * again on the beat that announces it. A material keeps one program per
+   * light set, so after both compiles either set is a lookup.
+   */
+  private compileForEachLightSet<T>(compile: () => T): T[] {
+    const alarm = this.alarm.group;
+    const shown = alarm.visible;
+    const results: T[] = [];
+    try {
+      for (const lit of [shown, !shown]) {
+        alarm.visible = lit;
+        results.push(compile());
+      }
+    } finally {
+      alarm.visible = shown;
+    }
+    return results;
+  }
+
+  /**
    * Compiles the programs of everything already in the scene (board, figures,
-   * panels, room) for the table before the board is shown. Effects built
-   * during a fight are not in the scene yet; the program keeper's stand-ins
-   * for them are, so their programs are compiled here too (see
-   * programKeeper.ts).
+   * panels, room) for the table before the board is shown, under each light
+   * set (see compileForEachLightSet). Effects built during a fight are not in
+   * the scene yet; the program keeper's stand-ins for them are, so their
+   * programs are compiled here too (see programKeeper.ts).
    *
    * Nothing a table frame draws matches a 2D program: the hall's lights and fog
    * are gone, shadows are off, tone mapping moves into the shader (no
@@ -1397,8 +1422,21 @@ export class SceneEngine {
     this.scene.children = children.filter((child) => !putAway.has(child));
     rig.root.visible = true;
     let compiled: Promise<unknown>;
+    const compileScene = (): Promise<unknown> => this.renderer.compileAsync(this.scene, this.camera);
+    // A captured figure fades out, which makes its surfaces transparent, and
+    // three draws a transparent double-sided surface in two passes (back
+    // faces, then front), each its own program. So the scene is compiled once
+    // more with every figure's surfaces as a fade leaves them.
+    const fading = [...this.pieces.values()].flatMap((view) => view.fadingSurfaces).filter((material) => !material.transparent);
     try {
-      compiled = this.renderer.compileAsync(this.scene, this.camera);
+      const passes = this.compileForEachLightSet(compileScene);
+      for (const material of fading) material.transparent = true;
+      try {
+        passes.push(...this.compileForEachLightSet(compileScene));
+      } finally {
+        for (const material of fading) material.transparent = false;
+      }
+      compiled = Promise.all(passes);
     } catch (error) {
       console.warn("[scene] could not warm the table's shaders", error);
       compiled = Promise.resolve();

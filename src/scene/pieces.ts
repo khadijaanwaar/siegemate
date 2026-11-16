@@ -1431,6 +1431,11 @@ export class PieceView {
     return this.dissolveAmount;
   }
 
+  /** The surfaces {@link setOpacity} fades (body and arms), for warming their programs. */
+  get fadingSurfaces(): readonly THREE.MeshStandardMaterial[] {
+    return this.arms ? [...this.materials, ...this.arms.materials] : this.materials;
+  }
+
   setOpacity(value: number): void {
     this.fade = value;
     for (const material of this.materials) {
