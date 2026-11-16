@@ -78,53 +78,57 @@ try {
   // Program ids only grow, so the highest id seen (polled through each beat,
   // since an effect can compile a program and release it before the beat
   // ends) counts every compile, released or not.
-  const SEQUENCE = ["e2e4", "d7d5", "e4d5", "d8d5", "b1c3", "d5d8", "c3b5", "c7c6", "b5a7", "a8a7", "f1c4", "b7b5", "c4f7", "e8f7", "d1h5", "g7g6", "h5g6", "h7g6"];
   const topId = async () => Math.max(-1, ...(await programIds()));
-  const captures = [];
   let quietCompiles = 0;
-  for (const move of SEQUENCE) {
-    const [from, to] = [move.slice(0, 2), move.slice(2, 4)];
-    const before = await topId();
-    const owners = {};
-    const played = await page.evaluate(([a, b]) => window.__xr.move(a, b), [from, to]);
-    let top = before;
-    await page.waitForTimeout(60);
-    for (;;) {
-      const sample = await page.evaluate(() => ({ moving: window.__scene.moving(), owners: window.__scene.programOwners() }));
-      for (const [id, owner] of Object.entries(sample.owners)) {
-        if (Number(id) > before) {
-          owners[id] = owner;
-          top = Math.max(top, Number(id));
+  /** Plays `sequence` (from-to pairs) and returns what each capture compiled. */
+  const playFight = async (sequence) => {
+    const captures = [];
+    for (const move of sequence) {
+      const [from, to] = [move.slice(0, 2), move.slice(2, 4)];
+      const before = await topId();
+      const owners = {};
+      const played = await page.evaluate(([a, b]) => window.__xr.move(a, b), [from, to]);
+      let top = before;
+      await page.waitForTimeout(60);
+      for (;;) {
+        const sample = await page.evaluate(() => ({ moving: window.__scene.moving(), owners: window.__scene.programOwners() }));
+        for (const [id, owner] of Object.entries(sample.owners)) {
+          if (Number(id) > before) {
+            owners[id] = owner;
+            top = Math.max(top, Number(id));
+          }
+        }
+        if (sample.moving === 0) break;
+        await page.waitForTimeout(100);
+      }
+      top = Math.max(top, await topId());
+      const beat = await page.evaluate(() => window.__scene.lastBeat());
+      const compiled = top - before;
+      if (!beat?.capture) {
+        quietCompiles += compiled;
+        continue;
+      }
+      captures.push({ move: `${from}x${to}`, played, wallMs: Math.round(beat.wallMs), engineS: Number(beat.engineS.toFixed(2)), programs: compiled });
+      if (process.argv.includes("--keys") && compiled > 0) {
+        console.log(`     ${from}x${to} compiled ${compiled}: ${JSON.stringify(Object.values(owners))}`);
+        // What changed: each new program's key against the closest older one.
+        const programs = await page.evaluate(() => window.__scene.programs());
+        const older = programs.filter((program) => program.id <= before).map((program) => program.key.split(","));
+        for (const program of programs.filter((entry) => entry.id > before)) {
+          const fields = program.key.split(",");
+          let best = [];
+          for (const key of older) {
+            if (key[0] !== fields[0] || key.length !== fields.length) continue;
+            const diff = fields.flatMap((field, i) => (field === key[i] ? [] : [`#${i} ${key[i].slice(0, 24)}→${field.slice(0, 24)}`]));
+            if (best.length === 0 || diff.length < best.length) best = diff;
+          }
+          console.log(`       ${fields[0].slice(0, 24)}: ${best.length ? best.join("; ") : "no older program of this kind"}`);
         }
       }
-      if (sample.moving === 0) break;
-      await page.waitForTimeout(100);
     }
-    top = Math.max(top, await topId());
-    const beat = await page.evaluate(() => window.__scene.lastBeat());
-    const compiled = top - before;
-    if (!beat?.capture) {
-      quietCompiles += compiled;
-      continue;
-    }
-    captures.push({ move: `${from}x${to}`, played, wallMs: Math.round(beat.wallMs), engineS: Number(beat.engineS.toFixed(2)), programs: compiled });
-    if (process.argv.includes("--keys") && compiled > 0) {
-      console.log(`     ${from}x${to} compiled ${compiled}: ${JSON.stringify(Object.values(owners))}`);
-      // What changed: each new program's key against the closest older one.
-      const programs = await page.evaluate(() => window.__scene.programs());
-      const older = programs.filter((program) => program.id <= before).map((program) => program.key.split(","));
-      for (const program of programs.filter((entry) => entry.id > before)) {
-        const fields = program.key.split(",");
-        let best = [];
-        for (const key of older) {
-          if (key[0] !== fields[0] || key.length !== fields.length) continue;
-          const diff = fields.flatMap((field, i) => (field === key[i] ? [] : [`#${i} ${key[i].slice(0, 24)}→${field.slice(0, 24)}`]));
-          if (best.length === 0 || diff.length < best.length) best = diff;
-        }
-        console.log(`       ${fields[0].slice(0, 24)}: ${best.length ? best.join("; ") : "no older program of this kind"}`);
-      }
-    }
-  }
+    return captures;
+  };
+  const captures = await playFight(["e2e4", "d7d5", "e4d5", "d8d5", "b1c3", "d5d8", "c3b5", "c7c6", "b5a7", "a8a7", "f1c4", "b7b5", "c4f7", "e8f7", "d1h5", "g7g6", "h5g6", "h7g6"]);
   report.captures = captures;
   report.compilesInQuietMoves = quietCompiles;
   report.keptPrograms = await page.evaluate(() => window.__scene.keptPrograms());
@@ -145,6 +149,21 @@ try {
   await page.evaluate(() => window.__xr.press("menu"));
   report.arenaSwitch = { programs: fresh(await programIds(), beforeArena).length, room: await page.evaluate(() => window.__xr.room()), ms: Date.now() - arenaStart };
   check(report.arenaSwitch.programs === 0, "switching battleground on the table compiles nothing", JSON.stringify(report.arenaSwitch));
+
+  // ---- a second game on the same table (the board is rebuilt, every figure
+  // new): 1. e4 f6 2. Qh5+ g6 3. Qxg6+ hxg6, its first capture under check.
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const save = { version: 1, options: { mode: "hotseat", difficulty: "easy", playerColor: "w", clockMinutes: null }, pgn: "", fen: START, clock: { whiteMs: 0, blackMs: 0 }, savedAt: Date.now() };
+  const beforeRebuild = await topId();
+  check(await page.evaluate((s) => window.__xr.resume(s), save), "a second game stands up on the table", "");
+  await page.waitForTimeout(2500); // the board rebuilds
+  report.rebuildPrograms = (await topId()) - beforeRebuild;
+  const rematch = await playFight(["e2e4", "f7f6", "d1h5", "g7g6", "h5g6", "h7g6"]);
+  report.secondGame = rematch;
+  check(rematch.length === 2, "two captures were played in the second game", rematch.map((capture) => capture.move).join(" "));
+  for (const capture of rematch) {
+    check(capture.programs === 0, `second game: ${capture.move} compiles no shaders`, JSON.stringify(capture));
+  }
 
   // ---- leave: the hall comes back with the new battleground's probe.
   await page.evaluate(() => window.__xr.exit());
