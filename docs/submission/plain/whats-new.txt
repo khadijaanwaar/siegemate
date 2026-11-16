@@ -1,0 +1,11 @@
+Siegemate is adapted from King's Gambit, my earlier 3D chess game for desktop and phone browsers. King's Gambit already had the chess rules (chess.js), the computer opponent in a Web Worker, the three sculpted armies with their animations and capture fights, the battlegrounds and the music.
+
+New since Sep 24 2026 is the whole mixed reality edition:
+- The WebXR passthrough session and a table mode in the scene engine, placing the board on a real table with hit-test, and a seat-height fallback.
+- Hand play (pinch orders, ray, fingertip poke, two-hand move, turn and resize) and full Touch controller play.
+- The headset UI: hints, a control slab, the menu with board height, sound and music, a promotion card and a result card.
+- The room taking on the battleground: a veil over the passthrough, weather in the room, and the board's light on the table.
+- Offline play after the first visit, with every asset self-hosted.
+- Sharing: replay links that carry the whole game, a battle card image, and a QR code on the headset result card.
+- Performance work for Quest: compressed assets, far fewer draw calls, multiview, and shaders compiled before the board appears.
+- A new name and look, and a quieter audio mix with a limiter for the table.
