@@ -6,7 +6,7 @@
 //
 //   node tests/e2e/xr-play.mjs [--headed]
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -343,9 +343,9 @@ try {
 
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-play.png") });
-  console.log(`     screenshot: ${join(out, "xr-play.png")}`);
   await browser.close();
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);

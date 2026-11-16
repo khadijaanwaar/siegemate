@@ -6,7 +6,7 @@
 //
 //   node tests/e2e/xr-share.mjs [--headed] [--shots]   (--shots writes docs/share/*.png)
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,5 +147,6 @@ try {
   await browser.close();
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);

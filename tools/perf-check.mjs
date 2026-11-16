@@ -7,7 +7,7 @@
 // Uses the real GPU through Chrome (channel "chrome"). `window.__scene` comes
 // from SceneEngine.exposeStats(), which only exists in dev/test builds.
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -86,5 +86,6 @@ try {
   }
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failed ? 1 : 0);

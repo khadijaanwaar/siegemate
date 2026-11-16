@@ -5,7 +5,7 @@
 //
 //   node tests/e2e/xr-controllers.mjs [--headed]
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Chess } from "chess.js";
@@ -276,5 +276,6 @@ try {
   await browser.close();
 } finally {
   server.kill();
+  rmSync(out, { recursive: true, force: true }); // this run's own build, nothing else
 }
 process.exit(failures.length ? 1 : 0);
