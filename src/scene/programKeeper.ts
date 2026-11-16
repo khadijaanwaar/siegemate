@@ -57,7 +57,7 @@ type Seeds = { objects: THREE.Object3D[]; resources: Array<THREE.BufferGeometry 
  * about the effects themselves changes.
  *
  * Stand-ins come from two places: {@link seed} (the materials a fight makes,
- * added before the first fight so the table's warm-up
+ * see {@link fightSeeds}, added before the first fight so the table's warm-up
  * compiles them behind the placement reticle) and {@link learn}, which adopts
  * any material it sees drawn with a program not yet held.
  */
@@ -164,4 +164,41 @@ export class ProgramKeeper {
     this.group.removeFromParent();
     this.held.clear();
   }
+}
+
+/**
+ * Stand-ins for the materials a fight makes, with the parameters that pick
+ * their programs (map, transparency, sides, instance colours), so the table's
+ * warm-up compiles them behind the placement reticle and the first fight
+ * finds them ready. Colours, opacity, blending and which texture is bound are
+ * uniforms or draw state and do not matter here.
+ *
+ * - points with a map: spark bursts (effects.ts)
+ * - sprite with a map: flashes, smoke, slashes, the check halo
+ * - double-sided plane with a map: ground waves, the conquest loop and seal,
+ *   pillars, punch rings (strikes.ts, shatter.ts)
+ * - instanced basic and instanced standard, both with instance colours:
+ *   shatter sparks and fragments (shatter.ts)
+ */
+export function fightSeeds(): Seeds {
+  const map = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  map.needsUpdate = true;
+  const point = new THREE.BufferGeometry();
+  point.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3), 3));
+  const plane = new THREE.PlaneGeometry(1, 1);
+  const chip = new THREE.BoxGeometry(1, 1, 1);
+  const instanced = (material: THREE.Material): THREE.InstancedMesh => {
+    const mesh = new THREE.InstancedMesh(chip, material, 1);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3), 3);
+    return mesh;
+  };
+  const objects: THREE.Object3D[] = [
+    new THREE.Points(point, new THREE.PointsMaterial({ map, transparent: true, depthWrite: false })),
+    new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })),
+    new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide })),
+    instanced(new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })),
+    instanced(new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0x14161a) })),
+  ];
+  for (const object of objects) object.name = "fight_seed";
+  return { objects, resources: [map, point, plane, chip] };
 }

@@ -31,7 +31,7 @@ import { nextPresetForFps, QUALITY_SETTINGS, type QualityPreset } from "./qualit
 import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
 import { LightBlendPass } from "./lightBlend";
-import { ProgramKeeper } from "./programKeeper";
+import { fightSeeds, ProgramKeeper } from "./programKeeper";
 import type { TableRig } from "../xr/tableRig";
 import { isTableXrSupported } from "../xr/session";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
@@ -1147,6 +1147,7 @@ export class SceneEngine {
   private readonly lightBlend = new LightBlendPass();
   /** Holds the shader programs of a fight's throwaway materials (see programKeeper.ts). */
   private keeper!: ProgramKeeper;
+  private keeperSeeded = false;
   private keeperTick = 0;
   private lastFpsReport = 0;
 
@@ -1343,6 +1344,11 @@ export class SceneEngine {
     this.idle.setBuckets(TABLE_IDLE_EVERY);
     this.refreshMaterials();
     this.tableWarmth = "cold";
+    // Stand-ins for a fight's materials, so the warm-up below compiles them too.
+    if (!this.keeperSeeded) {
+      this.keeper.seed(fightSeeds());
+      this.keeperSeeded = true;
+    }
 
     // The room is the player's own: no hall ambience, the score steps back,
     // and the next battleground's score is decoded before the menu asks for it.
