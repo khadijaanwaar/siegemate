@@ -23,6 +23,6 @@ export default defineShot({
   firstView: ({ d6, d3, d8 }) => view([d6[0] + 0.06, d6[1] + Number(process.env.CAM_UP ?? 0.2), d8[2] - 0.16], [d3[0], d3[1] + 0.02, d3[2] - 0.03], 46),
   async play(ctx) {
     await ctx.page.evaluate(() => void (window as any).__xr.move("d1", "d6"));
-    await intoMove(ctx, 7, Number(process.env.HIT_MS ?? 1000));
+    await intoMove(ctx, 7, Number(process.env.HIT_MS ?? 2000));
   },
 });
