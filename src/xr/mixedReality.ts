@@ -198,9 +198,12 @@ export class MixedReality {
     this.rig.root.visible = false;
     this.placement.replace(performance.now() / 1000);
 
+    this.faceThePlayersArmy();
     this.unsubscribe.push(
       this.table.onVisibility((visibility) => this.setFocused(visibility === "visible")),
       this.table.onEnd((requestedByApp) => this.teardown(requestedByApp)),
+      // A new game from the headset menu may change sides.
+      this.controller.on("reset", () => this.faceThePlayersArmy()),
     );
     this.engine.setXrFrameHandler((time, frame) => this.onFrame(time / 1000, frame));
     this.setState("placing");
@@ -278,6 +281,7 @@ export class MixedReality {
       unitsToMeters: this.rig.unitsToMeters,
       contentScale: content.scale.x,
       rigVisible: this.rig.root.visible,
+      flipped: this.rig.flipped,
       board: measure(board),
       glowScale: glow?.scale.x,
       head: this.head.position.toArray().map((value) => Math.round(value * 100) / 100),
@@ -715,6 +719,17 @@ export class MixedReality {
     this.setFocused(true);
     this.setState("off");
     this.hooks.onExit?.(requestedByApp);
+  }
+
+  /**
+   * The player's own army nearest: the board stands white-side toward the
+   * player, so against the computer as black it turns a half turn on its
+   * stand (the stand, panels and pose stay put). Two players at one board
+   * keep white near.
+   */
+  private faceThePlayersArmy(): void {
+    const snapshot = this.controller.getSnapshot();
+    this.rig.setFlipped(snapshot.mode === "ai" && snapshot.playerColor === "b");
   }
 
   private setFocused(focused: boolean): void {

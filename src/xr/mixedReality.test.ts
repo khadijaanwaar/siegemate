@@ -260,6 +260,21 @@ describe("MixedReality placement", () => {
   });
 });
 
+describe("MixedReality sides", () => {
+  it("turns the board so a player of black has their own army nearest, and back for white", async () => {
+    const { mixed, game } = await playing({}, { playerColor: "b" });
+    expect(mixed.debugSizes().flipped).toBe(true);
+    game.state.playerColor = "w";
+    game.emit("reset");
+    expect(mixed.debugSizes().flipped).toBe(false);
+  });
+
+  it("keeps white near for two players at one board", async () => {
+    const { mixed } = await playing({}, { mode: "hotseat", playerColor: "b" });
+    expect(mixed.debugSizes().flipped).toBe(false);
+  });
+});
+
 describe("MixedReality lifecycle", () => {
   it("hands focus back when the system ends the session while the menu was up, so the 2D game is not left paused", async () => {
     const focus: boolean[] = [];

@@ -61,6 +61,20 @@ export class TableRig {
     return this.multiplier;
   }
 
+  /** True when the board is turned a half turn on its stand, black's army toward the player. */
+  get flipped(): boolean {
+    return this.content.rotation.y !== 0;
+  }
+
+  /**
+   * Turns the board (not the stand, the panels or the pose) a half turn about
+   * its centre, so a player of black has their own army nearest.
+   */
+  setFlipped(flipped: boolean): void {
+    this.content.rotation.y = flipped ? Math.PI : 0;
+    this.root.updateMatrixWorld(true);
+  }
+
   get plinthVisible(): boolean {
     return this.plinth.visible;
   }

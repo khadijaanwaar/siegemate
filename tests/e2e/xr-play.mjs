@@ -225,6 +225,26 @@ try {
   check(sizeDuring > sizeBefore * 1.15, "pulling two pinched hands apart grows the board", `${sizeBefore} -> ${sizeDuring}`);
   check(stored !== null && Math.abs(Number(stored) - sizeDuring) < 0.01, "the new size is remembered", String(stored));
 
+  // ---- a new game as black from the headset: black's army is the near one.
+  const nearest = () =>
+    page.evaluate(() => {
+      const head = window.__xr.sizes().head;
+      const reach = (square) => {
+        const p = window.__xr.squareWorld(square);
+        return Math.hypot(p.x - head[0], p.z - head[2]);
+      };
+      return { e2: reach("e2"), e7: reach("e7") };
+    });
+  const asWhite = await nearest();
+  check(asWhite.e2 < asWhite.e7, "playing white, white's army is the near one", JSON.stringify(asWhite));
+  await page.evaluate(() => window.__xr.press("menu"));
+  await page.evaluate(() => window.__xr.press("side-b"));
+  await page.evaluate(() => window.__xr.press("new"));
+  await page.waitForTimeout(800);
+  const asBlack = await nearest();
+  const blackGame = await page.evaluate(() => window.__xr.snapshot().playerColor);
+  check(blackGame === "b" && asBlack.e7 < asBlack.e2, "playing black, the board turns so black's army is the near one", JSON.stringify({ blackGame, ...asBlack }));
+
   // ---- quitting through the Quest menu: the menu blurs the session (the match pauses),
   // then the system ends it. The 2D game must carry on, not stay paused for good.
   await page.evaluate(() => window.__iwer.updateVisibilityState("visible-blurred"));

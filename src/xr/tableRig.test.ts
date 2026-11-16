@@ -53,6 +53,22 @@ describe("TableRig", () => {
     expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0, 1.2, 0), new THREE.Vector3(0, 0, -1)), 4.92)).toBeNull();
   });
 
+  it("turns the board about its centre so black's army is the near one", () => {
+    const rig = new TableRig();
+    rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0);
+    const near = (square: string) => rig.toWorld(squareToWorld(square), new THREE.Vector3()).z;
+    expect(near("e2")).toBeGreaterThan(near("e7"));
+    rig.setFlipped(true);
+    expect(rig.flipped).toBe(true);
+    expect(near("e7")).toBeGreaterThan(near("e2"));
+    // a8 sits on black's near right, as across a real board.
+    const a8 = rig.toWorld(squareToWorld("a8"), new THREE.Vector3());
+    expect(a8.x).toBeGreaterThan(0);
+    expect(a8.z).toBeGreaterThan(-0.45);
+    rig.setFlipped(false);
+    expect(near("e2")).toBeGreaterThan(near("e7"));
+  });
+
   it("measures how far a hand is from the board", () => {
     const rig = new TableRig();
     rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0);
