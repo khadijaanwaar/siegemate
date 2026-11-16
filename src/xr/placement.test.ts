@@ -5,6 +5,12 @@ import { FALLBACK_AFTER_S, fallbackBoardPose, isReachableSurface, isTableSurface
 
 const up = new THREE.Vector3(0, 1, 0);
 const head = { position: new THREE.Vector3(0, 1.2, 0), yaw: 0 };
+const FRAME_S = 1 / 72;
+
+/** Headset frames from `from` to `to` seconds, with nothing found. */
+function searchFor(placement: Placement, from: number, to: number): void {
+  for (let now = from; now <= to + 1e-9; now += FRAME_S) placement.update(now, head, null);
+}
 
 describe("fallbackBoardPose", () => {
   it("stands the board 45 cm ahead and 40 cm below the eyes, facing the player", () => {
@@ -83,19 +89,28 @@ describe("Placement", () => {
   });
 
   it("falls back to seat height when no table turns up in time", () => {
+    expect(FALLBACK_AFTER_S).toBe(8);
     const placement = new Placement();
-    placement.update(0, head, null);
-    placement.update(FALLBACK_AFTER_S - 0.1, head, null);
+    searchFor(placement, 0, FALLBACK_AFTER_S - 0.1);
     expect(placement.state).toBe("searching");
-    placement.update(FALLBACK_AFTER_S + 0.01, head, null);
+    searchFor(placement, FALLBACK_AFTER_S - 0.1 + FRAME_S, FALLBACK_AFTER_S + 0.05);
     expect(placement.state).toBe("fallback");
     expect(placement.pose?.position.y).toBeCloseTo(0.8, 6);
   });
 
+  it("counts only time spent looking: time away (headset off, system menu) does not bring the fallback on", () => {
+    const placement = new Placement();
+    searchFor(placement, 0, 2);
+    // No frames for a minute: the headset was off.
+    searchFor(placement, 62, 64);
+    expect(placement.state).toBe("searching");
+    searchFor(placement, 64 + FRAME_S, 68.1);
+    expect(placement.state).toBe("fallback");
+  });
+
   it("stays put in fallback when a table appears later, until asked to re-place", () => {
     const placement = new Placement();
-    placement.update(0, head, null);
-    placement.update(FALLBACK_AFTER_S + 1, head, null);
+    searchFor(placement, 0, FALLBACK_AFTER_S + 1);
     placement.update(FALLBACK_AFTER_S + 2, head, { position: new THREE.Vector3(0, 0.74, -0.5), normal: up });
     expect(placement.state).toBe("fallback");
     placement.replace(FALLBACK_AFTER_S + 3);

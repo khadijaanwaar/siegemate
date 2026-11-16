@@ -45,7 +45,7 @@ try {
   await page.waitForTimeout(500);
   const placingUi = await page.evaluate(() => window.__xr.ui());
   check(placingUi.coach === "find-table" && placingUi.panels.includes("coach"), "the coach asks for a table while placing", JSON.stringify(placingUi));
-  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 14000 }).catch(() => undefined);
   const state = await page.evaluate(() => ({ state: window.__xr.state(), placement: window.__xr.placement() }));
   check(state.state === "playing" && state.placement === "fallback", "board falls back to seat height", JSON.stringify(state));
   // The frame must be drawn from the headset, not from the desktop camera metres away.

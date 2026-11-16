@@ -311,7 +311,9 @@ export class MixedReality {
     const viewer = frame.getViewerPose(space);
     if (viewer) this.readHead(viewer.transform);
 
-    if (this.state === "placing") this.updatePlacement(now, frame, space);
+    // The search for a table runs only while the player can see it: time under
+    // the system menu or with the headset off never brings on the fallback.
+    if (this.state === "placing" && this.table?.session.visibilityState === "visible") this.updatePlacement(now, frame, space);
     this.updateInputs(now, frame, space);
     this.styleRoom(now);
     this.samplePerf(now);

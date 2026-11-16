@@ -58,7 +58,7 @@ try {
   await page.evaluate(() => (window.__iwer.primaryInputMode = "controller"));
 
   await page.evaluate(() => window.__xr.enter());
-  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 8000 }).catch(() => undefined);
+  await page.waitForFunction(() => window.__xr.state() === "playing", null, { timeout: 14000 }).catch(() => undefined);
   await page.waitForTimeout(600);
   const ui = await page.evaluate(() => window.__xr.ui());
   check(ui?.pointer === "controllers" && ui.coach === "first-move", "with controllers in hand the coach speaks of the trigger", JSON.stringify(ui));

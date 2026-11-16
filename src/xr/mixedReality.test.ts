@@ -157,6 +157,26 @@ beforeEach(() => {
   sessions.start.mockReset();
 });
 
+/** Headset frames from `from` to `to` seconds at 72 Hz. */
+function run(engine: ReturnType<typeof fakeEngine>, from: number, to: number): void {
+  for (let now = from; now <= to + 1e-9; now += 1 / 72) engine.frame(now);
+}
+
+describe("MixedReality placement", () => {
+  it("falls back to seat height after 8 s of visible searching, not counting time under the system menu", async () => {
+    const { mixed, table, engine } = await entered();
+    table.setVisibility("visible-blurred");
+    run(engine, 0, 10);
+    expect(mixed.current).toBe("placing");
+    table.setVisibility("visible");
+    run(engine, 10, 17.5);
+    expect(mixed.current).toBe("placing");
+    run(engine, 17.5, 18.2);
+    expect(mixed.current).toBe("playing");
+    expect(mixed.placementState).toBe("fallback");
+  });
+});
+
 describe("MixedReality lifecycle", () => {
   it("hands focus back when the system ends the session while the menu was up, so the 2D game is not left paused", async () => {
     const focus: boolean[] = [];
