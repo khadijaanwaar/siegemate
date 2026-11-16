@@ -939,7 +939,15 @@ export function GameShell() {
             }
             onRematch={handleRematch}
             onMenu={returnToMenu}
-            onShare={shareGame ? () => share.open(shareGame) : undefined}
+            onShare={
+              shareGame
+                ? () => {
+                    // A looping showcase would start the next duel under the open sheet.
+                    if (snapshot.demo?.autoRematch) controller.setDemoAutoRematch(false);
+                    share.open(shareGame);
+                  }
+                : undefined
+            }
           />
         ) : null}
 
