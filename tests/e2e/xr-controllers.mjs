@@ -77,6 +77,16 @@ try {
     );
   };
   const trigger = (value) => page.evaluate((v) => window.__iwer.controllers.right.updateButtonValue("trigger", v), value);
+  // A click: the trigger goes down and comes back up, each held until a headset
+  // frame has read it. A loaded machine can stall the frame loop for seconds,
+  // and a press shorter than the stall would never be seen at all.
+  const pull = async () => {
+    await trigger(1);
+    await page.waitForFunction(() => window.__xr.pointer("right")?.trigger === true, null, { timeout: 10000 }).catch(() => undefined);
+    await page.waitForTimeout(150);
+    await trigger(0);
+    await page.waitForFunction(() => window.__xr.pointer("right")?.trigger === false, null, { timeout: 10000 }).catch(() => undefined);
+  };
   const squareTop = async (square, lift = 0) => {
     const p = await page.evaluate((s) => window.__xr.squareWorld(s), square);
     return { x: p.x, y: p.y + lift, z: p.z };
@@ -111,9 +121,7 @@ try {
   const click = async (square) => {
     await aim("right", from, await squareTop(square, square === "d2" ? 0.02 : 0));
     await page.waitForTimeout(200);
-    await trigger(1);
-    await page.waitForTimeout(150);
-    await trigger(0);
+    await pull();
     await page.waitForTimeout(250);
   };
   await click("d2");
@@ -121,6 +129,9 @@ try {
   await page.waitForFunction(() => window.__xr.snapshot().fen.split(" ")[0].split("/")[4] === "3PP3", null, { timeout: 5000 }).catch(() => undefined);
   const afterClicks = await page.evaluate(() => window.__xr.snapshot().fen);
   check(afterClicks.split(" ")[0].split("/")[4] === "3PP3", "click d2, then click d4, plays d2-d4", afterClicks);
+  // The machine's reply lands on its own clock: let it, so a changed position later is the panel's doing.
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen) && !window.__xr.snapshot().thinking, null, { timeout: 15000 }).catch(() => undefined);
+  await page.waitForTimeout(3000);
 
   // ---- the ray presses panel buttons: open the menu, close it.
   const pressAlongRay = async (id) => {
@@ -128,9 +139,7 @@ try {
     if (!at) return false;
     await aim("right", from, at);
     await page.waitForTimeout(200);
-    await trigger(1);
-    await page.waitForTimeout(150);
-    await trigger(0);
+    await pull();
     await page.waitForTimeout(300);
     return true;
   };
@@ -159,7 +168,9 @@ try {
   // headset (no picker hangs in front of the desktop camera); its Knight button, pressed along
   // the ray, crowns a knight and the game goes on.
   const promo = new Chess();
-  for (const san of ["a4", "b5", "axb5", "a6", "bxa6", "Bb7", "axb7", "Nc6"]) promo.move(san);
+  // The black knight leaves b8 for a6, not c6: a knight on c6 stands in the
+  // ray from the player's seat to b7, and the press would land on the knight.
+  for (const san of ["a4", "b5", "axb5", "a6", "bxa6", "Bb7", "axb7", "Na6"]) promo.move(san);
   const save = {
     version: 1,
     options: { mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null },
@@ -174,9 +185,7 @@ try {
   check(await page.evaluate((s) => window.__xr.resume(s), save), "a position one step from the crown stands up", promo.fen());
   await page.waitForTimeout(2500); // the board rebuilds
   await click("b7");
-  const picked = await page.evaluate(() => window.__xr.pointer("right"));
   await click("b8");
-  if (!(await page.evaluate(() => window.__xr.ui()))?.panels.includes("promote")) console.log(`     b7 click left: ${JSON.stringify(picked)}`);
   await page.waitForTimeout(400);
   const asking = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
   check(asking.ui?.panels.includes("promote"), "reaching the last rank shows the crown card in the headset", JSON.stringify(asking.ui));
