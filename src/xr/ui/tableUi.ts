@@ -362,6 +362,8 @@ export class TableUi {
         break;
       case "new":
       case "rematch":
+        // A rematch is the game just played again, whatever the menu last showed.
+        if (id === "rematch") this.seedMenu();
         this.menuOpen = false;
         this.showMenu();
         this.panels.result.visible = false;
