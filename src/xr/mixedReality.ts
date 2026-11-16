@@ -95,6 +95,8 @@ export class MixedReality {
   private state: MixedRealityState = "off";
   /** Set while both hands pinch away from any figure: they carry, turn and resize the board. */
   private twoHand: TwoHandStart | null = null;
+  /** False while the system menu is over the session or the headset is off (what {@link MixedRealityHooks.onFocus} last said). */
+  private focused = true;
   private readonly unsubscribe: (() => void)[] = [];
 
   // Scratch, reused every frame.
@@ -188,7 +190,7 @@ export class MixedReality {
     this.placement.replace(performance.now() / 1000);
 
     this.unsubscribe.push(
-      this.table.onVisibility((visibility) => this.hooks.onFocus?.(visibility === "visible")),
+      this.table.onVisibility((visibility) => this.setFocused(visibility === "visible")),
       this.table.onEnd((requestedByApp) => this.teardown(requestedByApp)),
     );
     this.engine.setXrFrameHandler((time, frame) => this.onFrame(time / 1000, frame));
@@ -654,8 +656,17 @@ export class MixedReality {
     this.lastFrameAt = 0;
     this.rig.showPlinth(false);
     this.table = null;
+    // Quitting from the system menu ends the session while it is blurred: the
+    // game it paused belongs to the 2D page again, which is in focus.
+    this.setFocused(true);
     this.setState("off");
     this.hooks.onExit?.(requestedByApp);
+  }
+
+  private setFocused(focused: boolean): void {
+    if (this.focused === focused) return;
+    this.focused = focused;
+    this.hooks.onFocus?.(focused);
   }
 
   private setState(state: MixedRealityState): void {

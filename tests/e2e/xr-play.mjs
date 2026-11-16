@@ -188,6 +188,16 @@ try {
   check(sizeDuring > sizeBefore * 1.15, "pulling two pinched hands apart grows the board", `${sizeBefore} -> ${sizeDuring}`);
   check(stored !== null && Math.abs(Number(stored) - sizeDuring) < 0.01, "the new size is remembered", String(stored));
 
+  // ---- quitting through the Quest menu: the menu blurs the session (the match pauses),
+  // then the system ends it. The 2D game must carry on, not stay paused for good.
+  await page.evaluate(() => window.__iwer.updateVisibilityState("visible-blurred"));
+  await page.waitForFunction(() => window.__xr.snapshot().paused, null, { timeout: 3000 }).catch(() => undefined);
+  check(await page.evaluate(() => window.__xr.snapshot().paused), "the system menu pauses the match", "");
+  await page.evaluate(() => window.__iwer.activeSession.end());
+  await page.waitForFunction(() => window.__xr.state() === "off", null, { timeout: 5000 }).catch(() => undefined);
+  const quit = await page.evaluate(() => ({ state: window.__xr.state(), paused: window.__xr.snapshot().paused, status: window.__xr.snapshot().status }));
+  check(quit.state === "off" && quit.paused === false && quit.status === "playing", "quitting through the system menu hands back a running 2D game", JSON.stringify(quit));
+
   check(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "));
   await page.screenshot({ path: join(out, "xr-play.png") });
   console.log(`     screenshot: ${join(out, "xr-play.png")}`);
