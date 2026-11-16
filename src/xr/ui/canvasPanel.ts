@@ -68,7 +68,10 @@ export class CanvasPanel {
     this.texture.minFilter = THREE.LinearFilter;
     const material = new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, toneMapped: false, depthWrite: false });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
-    this.mesh.renderOrder = 20;
+    // After the rank crests (figureMarks, order 40, drawn without a depth
+    // test), so a crest behind a card can't paint over it; the figures are
+    // opaque, so one standing in front of a card still hides it.
+    this.mesh.renderOrder = 50;
     this.mesh.name = "xr_panel";
   }
 
