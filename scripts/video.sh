@@ -71,6 +71,7 @@ PORT=$((4900 + RANDOM % 90))
 npx vite preview --outDir film-out/.build --port "$PORT" --strictPort >/dev/null 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null || true' EXIT
+trap 'exit 130' INT TERM
 for _ in $(seq 1 60); do
   curl -sf "http://localhost:$PORT/" >/dev/null && break
   sleep 0.5

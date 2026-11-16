@@ -57,17 +57,28 @@ export function filmInit(): void {
     if (pending > 0) return;
     for (const f of waiters.splice(0)) f();
   };
-  const track = <T,>(p: Promise<T>): Promise<T> => {
+  // Each operation counts until it settles, or for 4 s of real time at most: a load that never
+  // ends (a lazy image off screen, a stalled stream) must not hold every later frame.
+  const inFlight = new Map<number, string>();
+  let opId = 0;
+  const track = <T,>(p: Promise<T>, kind = "op"): Promise<T> => {
     pending++;
+    let open = true;
+    const id = opId++;
+    inFlight.set(id, kind);
     const done = () => {
+      if (!open) return;
+      open = false;
+      inFlight.delete(id);
       pending--;
       settle();
     };
     p.then(done, done);
+    realSetTimeout(done, 4000);
     return p;
   };
   const realFetch = w.fetch.bind(w);
-  w.fetch = (...a: unknown[]) => track(realFetch(...a));
+  w.fetch = (...a: unknown[]) => track(realFetch(...a), `fetch ${String((a[0] as { url?: string })?.url ?? a[0]).slice(-60)}`);
   // Which file each decoded sound came from, so the event log can name the sounds the game plays
   // (for laying the game's own sound under the film later).
   const bodyUrl = new WeakMap<object, string>();
@@ -108,12 +119,13 @@ export function filmInit(): void {
   Object.defineProperty(HTMLImageElement.prototype, "src", {
     ...srcDesc,
     set(this: HTMLImageElement, value: string) {
-      if (value && !value.startsWith("data:")) {
+      if (value && !value.startsWith("data:") && this.loading !== "lazy") {
         track(
           new Promise<void>((resolve) => {
             this.addEventListener("load", () => resolve(), { once: true });
             this.addEventListener("error", () => resolve(), { once: true });
           }),
+          `image ${value.slice(-60)}`,
         );
       }
       srcDesc.set!.call(this, value);
@@ -176,7 +188,7 @@ export function filmInit(): void {
     if (pending <= 0) return Promise.resolve(true);
     return new Promise((resolve) => {
       const timer = realSetTimeout(() => {
-        console.warn(`film: still ${pending} async operations after ${maxMs} ms; stepping anyway`);
+        console.warn(`film: still ${pending} async operations after ${maxMs} ms; stepping anyway: ${[...new Set(inFlight.values())].slice(0, 4).join(" | ")}`);
         resolve(false);
       }, maxMs);
       waiters.push(() => {
