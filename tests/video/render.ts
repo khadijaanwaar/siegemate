@@ -37,16 +37,24 @@ const heartbeat = setInterval(() => {
 const t0 = Date.now();
 log(`${shot.name}: GPU lock held; ${o.width}x${o.height} -> ${o.outWidth}x${o.outHeight} at ${o.fps} fps (${o.quality})`);
 
-const b = await boot({
-  baseUrl: o.baseUrl,
-  width: o.width,
-  height: o.height,
-  quality: o.gameQuality,
-  room: shot.room ?? LOUNGE,
-  storage: { ...STORAGE, ...(shot.storage ?? {}) },
-  seed: shot.seed ?? 1,
-  epochMs: Date.parse("2026-11-18T10:00:00Z"),
-  headed: o.headed,
+const bootOnce = () =>
+  boot({
+    baseUrl: o.baseUrl,
+    width: o.width,
+    height: o.height,
+    quality: o.gameQuality,
+    room: shot.room ?? LOUNGE,
+    storage: { ...STORAGE, ...(shot.storage ?? {}) },
+    seed: shot.seed ?? 1,
+    epochMs: Date.parse("2026-11-18T10:00:00Z"),
+    headed: o.headed,
+  });
+// Right after another GPU test the browser can come up without a WebGL2 context for the room:
+// one more try a few seconds later.
+const b = await bootOnce().catch(async (e: unknown) => {
+  log(`${shot.name}: boot failed (${String(e).slice(0, 120)}); trying again`);
+  await new Promise((r) => setTimeout(r, 4000));
+  return bootOnce();
 });
 const { page } = b;
 const bootMs = Date.now() - t0;

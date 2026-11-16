@@ -74,7 +74,10 @@ export async function boot(o: BootOptions): Promise<Booted> {
   await page.evaluate(installFrameTools);
   const jpeg = fs.readFileSync(path.resolve(o.room.file)).toString("base64");
   const room = await page.evaluate(installRoom, { jpegBase64: jpeg, yawDeg: o.room.yawDeg, table: o.room.table });
-  if (!room.ok) throw new Error(`room: ${room.why}`);
+  if (!room.ok) {
+    await browser.close().catch(() => undefined);
+    throw new Error(`room: ${room.why}`);
+  }
   const gpu = await page.evaluate(() => {
     const c = document.createElement("canvas").getContext("webgl2");
     const ext = c?.getExtension("WEBGL_debug_renderer_info");
