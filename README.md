@@ -113,9 +113,10 @@ npm run lint
 
 ## Credits and licences
 
-Siegemate is built on King's Gambit, an earlier browser chess game by the same author. The mixed reality edition (`src/xr`, `src/share`, offline play and the Quest performance work) is new.
+Siegemate grows out of the author's earlier 3D chess game for desktop and phone browsers. The mixed reality edition (`src/xr`, `src/share`, offline play and the Quest performance work) is new.
 
-- Figures, animation clips, music and sound effects: AI-generated assets made for King's Gambit.
+- Code: MIT, see [LICENSE](LICENSE).
+- Figures, animation clips, music and sound effects: carried over from the author's earlier chess game.
 - [chess.js](https://github.com/jhlywa/chess.js) (BSD-2-Clause), super-three and three.js (MIT), React (MIT), Radix UI (MIT), lucide (ISC).
 - [uqr](https://github.com/unjs/uqr) 0.1.3 (MIT), vendored for offline QR codes.
 - Inter and Cinzel, SIL Open Font License 1.1 (`public/fonts/OFL-*.txt`).

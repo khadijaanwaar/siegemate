@@ -1,4 +1,4 @@
-Siegemate is adapted from King's Gambit, my earlier 3D chess game for desktop and phone browsers. King's Gambit already had the chess rules (chess.js), the computer opponent in a Web Worker, the three sculpted armies with their animations and capture fights, the battlegrounds and the music.
+Siegemate is adapted from my earlier 3D chess game for desktop and phone browsers. That game already had the chess rules (chess.js), the computer opponent in a Web Worker, the three sculpted armies with their animations and capture fights, the battlegrounds and the music.
 
 New since Sep 24 2026 is the whole mixed reality edition:
 - The WebXR passthrough session and a table mode in the scene engine, placing the board on a real table with hit-test, and a seat-height fallback.

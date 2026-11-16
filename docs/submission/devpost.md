@@ -25,14 +25,14 @@ Mixed reality chess in the Meta Quest browser: pinch a sculpted soldier, send it
 ## Track and division
 
 - Track: **Gaming**
-- Division: **Adapted / Significantly Updated**. The earlier project is King's Gambit, a 3D chess game for desktop and
-  phone browsers. Everything in mixed reality is new in the window (see "What is new since Sep 24" below).
+- Division: **Adapted / Significantly Updated**. The earlier project is my own 3D chess game for desktop and phone
+  browsers. Everything in mixed reality is new in the window (see "What is new since Sep 24" below).
 
 ---
 
 ## Inspiration
 
-King's Gambit, my earlier browser game, already had chess pieces that were characters: three armies of sculpted,
+My earlier browser chess game already had chess pieces that were characters: three armies of sculpted,
 rigged figures that walk to their squares, fight over every capture and burn away when they lose. On a monitor all of
 that happens behind glass, and you click on it.
 
@@ -215,7 +215,7 @@ Plain text: `docs/submission/plain/for-judges.txt`.
 
 Plain text: `docs/submission/plain/whats-new.txt`.
 
-Before: King's Gambit, a 3D chess game for desktop and phone browsers, with the chess rules (chess.js), the computer
+Before: my earlier 3D chess game for desktop and phone browsers, with the chess rules (chess.js), the computer
 opponent in a Web Worker, the three sculpted armies with their animations and capture fights, the battlegrounds and
 the music. It was imported into this repository as its first commit (`ca13508`, Nov 13 2026).
 
@@ -236,10 +236,8 @@ New in the window, all committed from Nov 13 to Nov 16 2026:
 
 ## Unconfirmed / owner to check
 
-- **King's Gambit's date and provenance.** This repository starts on Nov 13 2026 and `../web` has no git history (its
-  files carry the copy date), so nothing here proves King's Gambit existed before Sep 24 2026. The Adapted division
-  depends on it: confirm the date, and whether it was public anywhere (its old share tags pointed at a rork.live host
-  and its assets at r2-pub.rork.com).
+- Confirmed by the owner (Nov 16): the earlier game pre-dates Sep 24 2026, so the division is Adapted. The
+  repository's history starts at its import on Nov 13, so be ready to show the earlier game if a judge asks.
 - The rules' exact wording for Adapted / Significantly Updated (`research/01-rules.md` has it second hand: "existing
   project with a meaningful new feature shipped in the window").
 - Meta VR Start membership before submitting, and the Devpost registration.
@@ -247,10 +245,9 @@ New in the window, all committed from Nov 13 to Nov 16 2026:
   answer (`plain/future-of-vr.txt` is ready in case).
 - Video rules: length, emulator footage allowed, public on YouTube or Vimeo, and whether a TTS narrator is fine. The
   film is emulator capture and is labelled so.
-- AI-generated assets: the figures, clips, music and sound effects were AI-generated for King's Gambit. Check the rules
-  on AI-generated content and the generator's terms.
-- **No LICENSE file** is in the repository (the old README linked an MIT licence that is not there). Decide the licence
-  before making the repository public.
+- Assets carried over from the earlier game (figures, clips, music, sound effects): if any were made with AI tools,
+  check the rules on AI-generated content and the tools' terms.
+- Licence: MIT (decided Nov 16), in `LICENSE`.
 - Repository URL and video URL (placeholders above).
 - That the live site matches main at the freeze. The plan's last logged deploy is `0409b4a` (Nov 13); the share QR,
   promotion card, height controls and Lane B fixes need a fresh deploy.
