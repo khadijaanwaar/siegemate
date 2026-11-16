@@ -293,6 +293,9 @@ const SCORE_VOLUME = 0.34;
  */
 const TABLE_SCORE_TRIM = 0.63;
 
+/** Cancels the limiter's automatic makeup gain (+1.94 dB at -4 dB / 20:1 / 2 dB knee). */
+const LIMITER_MAKEUP_TRIM = 10 ** (-1.94 / 20);
+
 /** How quickly the mix moves between the hall and the table. */
 const TABLE_FADE = 1.2;
 
@@ -476,7 +479,14 @@ export class AudioManager {
       this.limiter.ratio.value = 20;
       this.limiter.attack.value = 0.003;
       this.limiter.release.value = 0.25;
-      this.limiter.connect(this.ctx.destination);
+      // The compressor adds automatic makeup gain ((1 / full-range gain)^0.6
+      // per the spec): with these settings everything under the threshold
+      // came out 1.94 dB louder (measured in Chrome). Take it back off, so the
+      // mix is unchanged until a peak actually reaches the limiter.
+      const makeup = this.ctx.createGain();
+      makeup.gain.value = LIMITER_MAKEUP_TRIM;
+      this.limiter.connect(makeup);
+      makeup.connect(this.ctx.destination);
       this.master = this.ctx.createGain();
       this.master.gain.value = this.muted ? 0 : 1;
       this.master.connect(this.limiter);
