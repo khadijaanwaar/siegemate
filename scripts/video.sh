@@ -63,6 +63,7 @@ echo "[film] shots: $NAMES ($QUALITY)"
 
 if [ "$BUILD" = 1 ] || [ ! -f film-out/.build/index.html ]; then
   echo "[film] building the game (test mode: the emulator and the test hooks are in)"
+  mkdir -p film-out
   npx vite build --mode test --outDir film-out/.build --emptyOutDir >film-out/.build.log 2>&1 \
     || { tail -20 film-out/.build.log >&2; exit 1; }
 fi

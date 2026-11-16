@@ -55,6 +55,8 @@ export function installFilmClock(o: { epochMs: number; seed: number }): void {
 
   // Seeded Math.random (mulberry32): particles, shatter and idle sways land the same in every run.
   let seed = o.seed >>> 0;
+  /** Virtual time when the clock stops: boots take 5 to 30 s of real time. */
+  const START_MS = 120_000;
   Math.random = () => {
     seed = (seed + 0x6d2b79f5) >>> 0;
     let t = seed;
@@ -104,7 +106,10 @@ export function installFilmClock(o: { epochMs: number; seed: number }): void {
     },
     pause() {
       if (vt.virtual) return;
-      vt.now = realNow();
+      // The same start in every run, whatever boot took: a fixed virtual time (past any boot)
+      // and a fresh seed (boot drew a varying number of random values).
+      vt.now = Math.max(realNow(), START_MS);
+      seed = o.seed >>> 0;
       vt.virtual = true;
       // Frame callbacks already queued on real time move to the virtual queue.
     },

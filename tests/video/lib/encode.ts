@@ -25,7 +25,7 @@ export interface OpenEncoder extends Encoder {
 
 export function videoFilter(s: { width: number; height: number; outWidth: number; outHeight: number }): string {
   const scale = s.outWidth !== s.width || s.outHeight !== s.height ? `:w=${s.outWidth}:h=${s.outHeight}:flags=lanczos+accurate_rnd+full_chroma_int` : ":flags=accurate_rnd+full_chroma_int";
-  return `scale=out_color_matrix=bt709:out_range=tv${scale},format=yuv420p`;
+  return `scale=out_color_matrix=bt709:out_range=tv${scale},format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`;
 }
 
 export function x264Args(s: { crf: number; preset: string; fps: number }): string[] {
