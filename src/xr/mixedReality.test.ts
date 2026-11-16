@@ -252,9 +252,9 @@ describe("MixedReality placement", () => {
     run(engine, 0, 10);
     expect(mixed.current).toBe("placing");
     table.setVisibility("visible");
-    run(engine, 10, 17.5);
+    run(engine, 10, 17);
     expect(mixed.current).toBe("placing");
-    run(engine, 17.5, 18.2);
+    run(engine, 17, 18.6);
     expect(mixed.current).toBe("playing");
     expect(mixed.placementState).toBe("fallback");
   });

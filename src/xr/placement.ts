@@ -5,8 +5,12 @@ import * as THREE from "three";
  * anyway. Only time the player could see the search counts (see {@link MAX_STEP_S}).
  */
 export const FALLBACK_AFTER_S = 8;
-/** A longer gap between frames was time away (headset off, system menu up): it is not searching. */
-const MAX_STEP_S = 0.1;
+/**
+ * A longer gap between frames was time away (headset off, no frames at all):
+ * it is not searching. Generous enough that a slow frame (a shader compile, a
+ * loaded emulator) still counts in full.
+ */
+const MAX_STEP_S = 0.5;
 /** A lost hit keeps the reticle where it was for this long, so a flicker does not reset aiming. */
 const AIM_GRACE_S = 0.5;
 /** Seated reach: the board centre this far ahead of the eyes... */
