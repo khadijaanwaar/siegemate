@@ -14,6 +14,15 @@ scripts/video.sh --shots c --no-build         # reuse the last build (film-out/.
 
 Output in `film-out/<W>x<H>-<fps>/` (gitignored): `<shot>.mp4`, `<shot>.json`, `<shot>-still-1..3.png`,
 `<shot>-contact.png`, and with two or more shots `rough.mp4` + `rough.json` (hard cuts in the order asked for).
+`FILM_OUT=dir` puts them under another folder. The game is built into `film-out/.build` (about 28 MB), kept so
+`--no-build` can reuse it and overwritten by the next build; nothing else is written: frames go straight into ffmpeg.
+
+Cost on this laptop (Intel Iris Plus, one GPU test at a time): a draft takes 2 to 7 s per second of video; a final
+about 0.36 s per frame at 1920x1080 and 0.42 s at 2560x1440 (21 to 25 s per second of 60 fps video, before waiting
+for the GPU lock), and ends up a few tens of MB per shot.
+
+What the film draws itself, over or under the game's own frame: the room photograph, the hands and their pinch ring,
+the corner label, and in shot a the 2D page as a floating browser window with a pointer's cursor dot.
 
 ## The event log (`<shot>.json`)
 
@@ -29,8 +38,8 @@ narration. `timings` has the render cost; `engine` the computer's replies.
 - **Clock** (`lib/clock.ts`): the page boots on real time; then `performance.now`, `Date`, `requestAnimationFrame`,
   `setTimeout` and `setInterval` stop and move only when a frame is stepped (1/60 s). IWER drives the XR frame loop
   from them, so a step is one game frame however long the GPU takes. Before each step the recorder waits for async
-  work in flight (fetches, decodes, the engine's reply), so the same thing happens on the same frame every run.
-  `Math.random` is seeded.
+  work in flight (fetches, decodes, the engine's reply; any one of them at most 4 s), so the game's events land on
+  the same frames every run. The clock stops at a fixed virtual time and `Math.random` is reseeded there.
 - **Room** (`lib/page.ts` `installRoom`): IWER's synthetic environment hook, filled with a module of the film's own:
   it draws the equirectangular photograph from the headset's pose and lens behind the game, and answers hit tests on a
   level table top matched to the photographed coffee table (`lib/stage.ts` `LOUNGE`), so the game's own reticle finds
@@ -39,8 +48,14 @@ narration. `timings` has the render cost; `engine` the computer's replies.
 - **Alpha**: the game's renderer asks for an opaque canvas; the film gives every WebGL context an alpha channel (as an
   XR layer has on a headset), so the room shows through where the game clears.
 - **Hands**: IWER's emulated hands, posed from eased tracks (`lib/hands.ts`); the game sees real pinches. They are
-  drawn by the film from the session's joint poses as a see-through smoky hand with a thin warm rim, fading out past
-  the wrist, in the spirit of the Quest system hand.
+  drawn by the film from the session's joint poses as a see-through smoky hand with a thin warm rim and faint finger
+  lines, fading out past the wrist, in the spirit of the Quest system hand; a small ring between thumb and index tips
+  closes to a dot as they meet, so each pinch reads.
+- **Browser window** (shot a): before mixed reality the 2D page is photographed every captured frame and drawn as a
+  window floating in the room, with a pointer's cursor dot; the game's own "Play on your table" button is clicked.
+- **Game sound** (`deliver.ts sound`): the samples the game starts (`sound` events, with their files) are laid back
+  in from the build under each clip. Rough: the game's synthesized sounds and its mix levels are not in it, and the
+  rough cut keeps sound only when every clip has some.
 - **Computer replies**: scripted per shot (`replies`, UCI) through a stand-in for the search worker; the real
   (random on Squire) engine answers once the script runs out, with a warning in the sidecar.
 - **Undrawn setup**: a shot's `setup` steps the game with draw calls skipped (enter, place the board, play an opening
