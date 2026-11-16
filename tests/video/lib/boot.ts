@@ -50,6 +50,7 @@ export async function boot(o: BootOptions): Promise<Booted> {
     deviceScaleFactor: 1,
     serviceWorkers: "block",
   });
+  await serveAsSite(context, o.baseUrl);
   const page = await context.newPage();
   const errors: string[] = [];
   const lines: string[] = [];
@@ -66,7 +67,7 @@ export async function boot(o: BootOptions): Promise<Booted> {
     localStorage.clear();
     for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v);
   }, o.storage);
-  await page.goto(`${o.baseUrl}/?emulate&quality=${encodeURIComponent(o.quality)}`, { waitUntil: "load" });
+  await page.goto(`${FILM_ORIGIN}/?emulate&quality=${encodeURIComponent(o.quality)}`, { waitUntil: "load" });
   await page.waitForFunction(() => {
     const w = window as unknown as { __xr?: unknown; __iwer?: unknown; __scene?: { piece(s: string): unknown } };
     return Boolean(w.__xr && w.__iwer && w.__scene?.piece("e2"));
@@ -84,4 +85,19 @@ export async function boot(o: BootOptions): Promise<Booted> {
     return ext ? String(c!.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "unknown";
   });
   return { browser, context, page, errors, console: lines, gpu };
+}
+
+/**
+ * The game's public address, served from the local build: every request to it is answered by the local
+ * preview server, so links the game makes (the share sheet, the headset's QR code) carry the real site and
+ * nothing reaches the network.
+ */
+export const FILM_ORIGIN = "https://siegemate.pages.dev";
+
+export async function serveAsSite(context: BrowserContext, localBase: string): Promise<void> {
+  await context.route(`${FILM_ORIGIN}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({ url: `${localBase}${url.pathname}${url.search}` });
+    await route.fulfill({ response });
+  });
 }

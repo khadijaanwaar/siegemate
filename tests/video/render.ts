@@ -11,6 +11,7 @@ import { takeGpuLock } from "../../tools/gpu-lock.mjs";
 import { boot } from "./lib/boot.ts";
 import { openEncoder, probe } from "./lib/encode.ts";
 import { filmOptions } from "./lib/options.ts";
+import { renderPageShot } from "./lib/render-page.ts";
 import { EMULATOR_LABEL, SIM_HZ, ShotContext } from "./lib/shot.ts";
 import { LOUNGE, ROOM_VIEW, STORAGE } from "./lib/stage.ts";
 import { findShot } from "./shots/index.ts";
@@ -36,6 +37,19 @@ const heartbeat = setInterval(() => {
 }, 30_000);
 const t0 = Date.now();
 log(`${shot.name}: GPU lock held; ${o.width}x${o.height} -> ${o.outWidth}x${o.outHeight} at ${o.fps} fps (${o.quality})`);
+
+if ("kind" in shot && shot.kind === "page") {
+  // A page shot: the 2D page in a plain browser (lib/render-page.ts).
+  try {
+    await renderPageShot(shot, o, log);
+  } catch (e) {
+    console.error(`[film] ${shot.name} failed:`, e);
+    process.exit(1);
+  } finally {
+    clearInterval(heartbeat);
+  }
+  process.exit(0);
+}
 
 const bootOnce = () =>
   boot({

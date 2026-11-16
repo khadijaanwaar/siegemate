@@ -16,6 +16,8 @@ export interface EncodeSpec {
   outHeight: number;
   crf: number;
   preset: string;
+  /** Filters before the colour conversion (a page shot's phone frame on its backdrop). */
+  prefilter?: string;
 }
 
 export interface OpenEncoder extends Encoder {
@@ -41,7 +43,7 @@ export function openEncoder(s: EncodeSpec): OpenEncoder {
   const args = [
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "image2pipe", "-framerate", String(s.fps), "-c:v", s.format === "image/png" ? "png" : "mjpeg", "-i", "-",
-    "-vf", videoFilter(s),
+    "-vf", `${s.prefilter ? `${s.prefilter},` : ""}${videoFilter(s)}`,
     ...x264Args(s),
     "-an", s.file,
   ];

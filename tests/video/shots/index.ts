@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { PageShot } from "../lib/pageshot.ts";
 import type { Shot } from "../lib/shot.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -24,9 +25,9 @@ export function resolveShot(name: string): string {
   return hit;
 }
 
-export async function findShot(name: string): Promise<Shot> {
+export async function findShot(name: string): Promise<Shot | PageShot> {
   const file = resolveShot(name);
-  const mod = (await import(path.join(here, `${file}.ts`))) as { default: Shot };
+  const mod = (await import(path.join(here, `${file}.ts`))) as { default: Shot | PageShot };
   if (mod.default.name !== file) throw new Error(`shots/${file}.ts names itself "${mod.default.name}"`);
   return mod.default;
 }
