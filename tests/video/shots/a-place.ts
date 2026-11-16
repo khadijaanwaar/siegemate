@@ -13,8 +13,9 @@ export default defineShot({
   description: "The page in a browser window, tap Play on your table; the room appears, the reticle finds the coffee table, a pinch sets the board down.",
   seconds: 11,
   async setup({ wait }) {
-    // The menu, on screen and settled (fonts, the hall behind it).
-    await wait(1500);
+    // The menu, on screen and settled: fonts, the hall behind it, and the intro's camera fly-in
+    // (about 7 s; Lane B may drop it when mixed reality is offered).
+    await wait(8000);
     return {};
   },
   firstView: () => ({ from: EYE, at: [0, 1.02, -1.45] }),

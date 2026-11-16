@@ -68,10 +68,17 @@ export function filmInit(): void {
   };
   const realFetch = w.fetch.bind(w);
   w.fetch = (...a: unknown[]) => track(realFetch(...a));
+  // Which file each decoded sound came from, so the event log can name the sounds the game plays
+  // (for laying the game's own sound under the film later).
+  const bodyUrl = new WeakMap<object, string>();
+  const soundUrl = new WeakMap<object, string>();
+  w.__filmSounds = [] as Array<Record<string, unknown>>;
   for (const m of ["arrayBuffer", "blob", "json", "text"]) {
     const body = w.Response.prototype[m];
-    w.Response.prototype[m] = function (this: unknown, ...a: unknown[]) {
-      return track(body.apply(this, a));
+    w.Response.prototype[m] = function (this: Response, ...a: unknown[]) {
+      const p = body.apply(this, a) as Promise<unknown>;
+      if (m === "arrayBuffer") void p.then((buf) => buf && bodyUrl.set(buf as object, this.url), () => undefined);
+      return track(p);
     };
   }
   const realBitmap = w.createImageBitmap.bind(w);
@@ -80,7 +87,21 @@ export function filmInit(): void {
   if (Audio?.prototype?.decodeAudioData) {
     const decode = Audio.prototype.decodeAudioData;
     Audio.prototype.decodeAudioData = function (this: unknown, ...a: unknown[]) {
-      return track(decode.apply(this, a));
+      const url = a[0] ? bodyUrl.get(a[0] as object) : undefined;
+      const p = decode.apply(this, a) as Promise<AudioBuffer>;
+      if (url) void p.then((buffer) => buffer && soundUrl.set(buffer, new URL(url).pathname), () => undefined);
+      return track(p);
+    };
+  }
+  const Source = w.AudioBufferSourceNode;
+  if (Source?.prototype?.start) {
+    const start = Source.prototype.start;
+    Source.prototype.start = function (this: AudioBufferSourceNode, ...a: number[]) {
+      const buffer = this.buffer;
+      if (buffer && w.__vt?.virtual) {
+        w.__filmSounds.push({ type: "sound", file: soundUrl.get(buffer) ?? null, offset: a[1] ?? 0, seconds: a[2] ?? buffer.duration, rate: this.playbackRate.value, loop: this.loop });
+      }
+      return start.apply(this, a);
     };
   }
   const srcDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src")!;
@@ -527,6 +548,7 @@ export function installFrameTools(): void {
       }
     }
     last = now;
+    out.push(...(w.__filmSounds as Array<Record<string, unknown>>).splice(0));
     return out;
   };
 
@@ -541,6 +563,7 @@ export function installFrameTools(): void {
   const out = document.createElement("canvas");
   const layer = document.createElement("canvas");
   const rim = document.createElement("canvas");
+  const lines = document.createElement("canvas");
 
   const project = (v: { proj: number[]; inv: number[] }, p: number[], W: number, H: number) => {
     const m = v.inv, P = v.proj;
@@ -600,7 +623,7 @@ export function installFrameTools(): void {
     }
     if (!gameCanvas) throw new Error("film: no game canvas");
     const [W, H] = !xr && a.size ? a.size : [gameCanvas.width, gameCanvas.height];
-    for (const c of [out, layer, rim]) {
+    for (const c of [out, layer, rim, lines]) {
       if (c.width !== W || c.height !== H) {
         c.width = W;
         c.height = H;
@@ -685,7 +708,7 @@ export function installFrameTools(): void {
           for (let i = 1; i < chain.length; i++) {
             const p0 = pts[chain[i - 1]], p1 = pts[chain[i]];
             if (!p0 || !p1) continue;
-            l.lineWidth = Math.max(2, 2 * Math.min(p0.r, p1.r) * 1.05);
+            l.lineWidth = Math.max(2, 2 * Math.min(p0.r, p1.r) * 0.92);
             l.beginPath();
             l.moveTo(p0.x, p0.y);
             l.lineTo(p1.x, p1.y);
@@ -719,14 +742,48 @@ export function installFrameTools(): void {
         r.globalCompositeOperation = "source-in";
         r.fillStyle = "#fff6e8";
         r.fillRect(0, 0, W, H);
+        // Each finger traced faintly from the knuckle (inside the silhouette), so a closed hand still
+        // reads as fingers.
+        const f = lines.getContext("2d")!;
+        f.globalCompositeOperation = "source-over";
+        f.clearRect(0, 0, W, H);
+        f.strokeStyle = "rgba(255,246,232,0.5)";
+        f.lineWidth = Math.max(1, t * 0.8);
+        f.lineCap = "round";
+        f.lineJoin = "round";
+        for (const chain of HAND) {
+          f.beginPath();
+          chain.slice(2).forEach((n, i) => (pts[n] ? (i ? f.lineTo(pts[n].x, pts[n].y) : f.moveTo(pts[n].x, pts[n].y)) : undefined));
+          f.stroke();
+        }
+        f.globalCompositeOperation = "destination-in";
+        f.drawImage(layer, 0, 0);
         // Fill: the silhouette tinted a smoky warm grey.
         l.globalCompositeOperation = "source-in";
-        l.fillStyle = "#3a3632";
+        l.fillStyle = "#8c857c";
         l.fillRect(0, 0, W, H);
         ctx.globalAlpha = a.handLook.fill;
         ctx.drawImage(layer, 0, 0);
         ctx.globalAlpha = a.handLook.rim;
         ctx.drawImage(rim, 0, 0);
+        ctx.drawImage(lines, 0, 0);
+        // The pinch: a small ring between thumb and index tips that closes to a dot as they meet,
+        // like the headset's own pinch cursor, so the viewer sees each pinch land.
+        const th = joints["thumb-tip"], ix = joints["index-finger-tip"];
+        const pinchAt = th && ix ? project(view, [(th[0] + ix[0]) / 2, (th[1] + ix[1]) / 2, (th[2] + ix[2]) / 2, 0.006], W, H) : null;
+        if (pinchAt) {
+          const gap = Math.hypot(th[0] - ix[0], th[1] - ix[1], th[2] - ix[2]);
+          const k = Math.min(1, Math.max(0, (gap - 0.012) / 0.05));
+          const s = H / 1080;
+          ctx.globalAlpha = a.handLook.rim * (0.95 - 0.35 * k);
+          ctx.strokeStyle = "#fff6e8";
+          ctx.fillStyle = "#fff6e8";
+          ctx.lineWidth = 2 * s;
+          ctx.beginPath();
+          ctx.arc(pinchAt.x, pinchAt.y, (3 + 9 * k) * s, 0, Math.PI * 2);
+          if (k < 0.05) ctx.fill();
+          else ctx.stroke();
+        }
         ctx.globalAlpha = 1;
       }
     }

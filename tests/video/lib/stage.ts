@@ -31,8 +31,8 @@ export const STORAGE: Record<string, string> = {
   "mr-chess:board-size": "0.95",
 };
 
-/** The right hand reaching in to pick a figure: fingers ahead and down, turned a little in. */
-export const REACH_R = handTurn(18, -38, 18);
+/** The right hand reaching in from the right to pick a figure: fingers pointing left and down, thumb up. */
+export const REACH_R = handTurn(75, -25, 75);
 /** The left hand coming in to poke a headset button: index ahead, a little in. */
 export const POKE_L = handTurn(-20, -20, -10);
 /** The right hand coming in to poke. */

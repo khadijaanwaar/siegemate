@@ -24,7 +24,7 @@ export default defineShot({
     await game.play("d1h5");
     return { h5: await game.square("h5"), f7: await game.square("f7") };
   },
-  firstView: ({ h5, f7 }) => close([(h5[0] + f7[0]) / 2, h5[1], (h5[2] + f7[2]) / 2 + 0.04], 62),
+  firstView: ({ h5, f7 }) => close([(h5[0] + f7[0]) / 2, h5[1], (h5[2] + f7[2]) / 2 + 0.04], 50),
   async play({ camera, right, page, wait, waitFor, until, mark }, { h5, f7 }) {
     right.place([h5[0] + 0.3, h5[1] + 0.05, h5[2] + 0.3], REACH_R);
     await wait(400);

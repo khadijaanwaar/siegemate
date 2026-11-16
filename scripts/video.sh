@@ -84,6 +84,7 @@ DONE=()
 for shot in $NAMES; do
   if node --no-warnings tests/video/render.ts "$shot"; then
     node --no-warnings tests/video/deliver.ts stills "$shot"
+    node --no-warnings tests/video/deliver.ts sound "$shot" || echo "[film] $shot: no game sound laid in" >&2
     DONE+=("$shot")
   else
     FAILED+=("$shot")

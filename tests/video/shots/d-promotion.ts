@@ -26,7 +26,7 @@ export default defineShot({
     await game.play("c6b7");
     return { b7: await game.square("b7"), a8: await game.square("a8") };
   },
-  firstView: ({ b7, a8 }) => close([(b7[0] + a8[0]) / 2 + 0.03, b7[1], (b7[2] + a8[2]) / 2 + 0.06], 60),
+  firstView: ({ b7, a8 }) => close([(b7[0] + a8[0]) / 2 + 0.03, b7[1], (b7[2] + a8[2]) / 2 + 0.06], 48),
   async play({ camera, right, game, page, wait, waitFor, until, mark }, { b7, a8 }) {
     right.place([b7[0] + 0.32, b7[1] + 0.05, b7[2] + 0.3], REACH_R);
     await wait(400);

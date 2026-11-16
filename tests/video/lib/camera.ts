@@ -2,7 +2,7 @@
 // recorder asks for the pose of each frame and puts the emulated headset there before stepping.
 //
 // Adapted from Shadow Locks' tests/video/lib/camera.ts, Copyright (c) 2026 Hamid Siddiqui
-// (github.com/inventionsbyhamid), reused within the same author family (see THIRD_PARTY notes in
+// (github.com/inventionsbyhamid), reused within the same author family (see Credits in
 // tests/video/README.md). Changes: explicit fields (Node's type stripping), a look-down helper.
 
 export type V3 = readonly [number, number, number];
