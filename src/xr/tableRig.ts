@@ -70,6 +70,28 @@ export class TableRig {
     this.plinth.visible = visible;
   }
 
+  /**
+   * Metres along `ray` (world space) to where it meets the board's top within
+   * `halfUnits` (game units) of its centre, or null when it misses or points away.
+   * A plane test: cheap enough for every hand, every frame.
+   */
+  rayToBoard(ray: THREE.Ray, halfUnits: number): number | null {
+    this.root.updateMatrixWorld(true);
+    this.inverse.copy(this.root.matrixWorld).invert();
+    const local = this.localRay.copy(ray).applyMatrix4(this.inverse);
+    const top = this.content.position.y;
+    if (Math.abs(local.direction.y) < 1e-6) return null;
+    const distance = (top - local.origin.y) / local.direction.y;
+    if (distance < 0) return null;
+    const half = halfUnits * this.unitsToMeters;
+    const x = local.origin.x + local.direction.x * distance;
+    const z = local.origin.z + local.direction.z * distance;
+    return Math.abs(x) <= half && Math.abs(z) <= half ? distance : null;
+  }
+
+  private readonly inverse = new THREE.Matrix4();
+  private readonly localRay = new THREE.Ray();
+
   toWorld(local: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
     this.root.updateMatrixWorld(true);
     return this.content.localToWorld(out.copy(local));

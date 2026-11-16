@@ -41,6 +41,18 @@ describe("TableRig", () => {
     expect(back.distanceTo(local)).toBeLessThan(1e-6);
   });
 
+  it("tells how far along a ray the board's top is, and misses off its edge or pointing away", () => {
+    const rig = new TableRig();
+    rig.setPose(new THREE.Vector3(0, 0.75, -0.45), 0.4);
+    const top = 0.75 + BOARD_DEPTH_UNITS * TABLE_SCALE;
+    const down = new THREE.Vector3(0, -1, 0);
+    const onBoard = rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0.05, 1.2, -0.45), down), 4.92);
+    expect(onBoard).toBeCloseTo(1.2 - top, 6);
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0.6, 1.2, -0.45), down), 4.92)).toBeNull();
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0, 1.2, -0.45), new THREE.Vector3(0, 1, 0)), 4.92)).toBeNull();
+    expect(rig.rayToBoard(new THREE.Ray(new THREE.Vector3(0, 1.2, 0), new THREE.Vector3(0, 0, -1)), 4.92)).toBeNull();
+  });
+
   it("clamps the size the player can pinch it to", () => {
     const rig = new TableRig();
     expect(rig.setScale(3)).toBe(1.6);

@@ -303,8 +303,40 @@ describe("MixedReality controllers", () => {
   });
 });
 
+/** The lines the markers draw: the pointer rays (one per side), and the command line while a hand carries an order. */
+function drawnRays(mixed: InstanceType<typeof MixedReality>): number {
+  const group = (mixed as unknown as { markers: { group: THREE.Group } }).markers.group;
+  return group.children.filter((child) => (child as THREE.Line).isLine && child.visible).length;
+}
+
 describe("MixedReality hands", () => {
   const atPawn = new THREE.Vector3(0.02, 0.85, -0.4);
+
+  it("draws a hand's ray only while it is on the board or a panel", async () => {
+    const { mixed, engine, table } = await playing();
+    const hand = fakeInput("right", "hand");
+    engine.setInputs([hand], table);
+    hand.pinch(false, new THREE.Vector3(0.1, 1.0, -0.2));
+    hand.aim(new THREE.Vector3(0.1, 1.0, -0.2), new THREE.Vector3(1, 0, 0));
+    engine.frame(9);
+    expect(drawnRays(mixed)).toBe(0);
+    hand.aim(new THREE.Vector3(0.1, 1.0, -0.2), new THREE.Vector3(0, -1, 0));
+    engine.frame(9.02);
+    expect(drawnRays(mixed)).toBe(1);
+    hand.aim(new THREE.Vector3(0.1, 1.0, -0.2), new THREE.Vector3(1, 0, 0));
+    panels.rayOnPanel = { distance: 0.3 };
+    engine.frame(9.04);
+    expect(drawnRays(mixed)).toBe(1);
+  });
+
+  it("keeps a controller's ray drawn when it points at nothing", async () => {
+    const { mixed, engine, table } = await playing();
+    const right = fakeInput("right", "controller");
+    right.aim(new THREE.Vector3(0.2, 1.1, -0.2), new THREE.Vector3(1, 0, 0));
+    engine.setInputs([right], table);
+    engine.frame(9);
+    expect(drawnRays(mixed)).toBe(1);
+  });
 
   it("lets an ordering hand's release through even with its fingertip in a panel's poke volume", async () => {
     const { engine, table } = await playing();

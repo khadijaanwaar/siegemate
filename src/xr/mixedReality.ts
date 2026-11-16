@@ -49,8 +49,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 type InputKind = "hand" | "controller";
 type PanelTarget = NonNullable<ReturnType<TableUi["rayTarget"]>>;
 
-/** How far a pointer ray reaches when it is on nothing, in metres. */
-const HAND_RAY_M = 0.6;
+/** How far a controller's ray reaches when it is on nothing, in metres (a hand's is not drawn then). */
 const CONTROLLER_RAY_M = 1.5;
 
 /**
@@ -545,14 +544,17 @@ export class MixedReality {
       }
       if (!ring && after !== "ordering") ring = square;
       if (!ray || this.twoHand || (after === "ordering" && !slot.orders.byRay)) continue;
+      // A hand's ray shows only while it is on a panel or the board: a hand at
+      // rest, or busy with something else in the room, draws nothing.
+      const onBoard = !target && !square && slot.kind === "hand" && this.rig.root.visible ? this.rig.rayToBoard(ray, BOARD_HALF_UNITS) : null;
       const length = target
         ? target.distance
         : square
           ? ray.origin.distanceTo(this.engine.squareCenterWorld(square, this.aimPoint))
           : slot.kind === "controller"
             ? CONTROLLER_RAY_M
-            : HAND_RAY_M;
-      rays.push({ ray, length });
+            : onBoard;
+      if (length !== null) rays.push({ ray, length });
     }
 
     if (panelTarget) this.ui.hoverRay(panelTarget);
