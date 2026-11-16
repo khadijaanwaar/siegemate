@@ -519,7 +519,7 @@ export class MixedReality {
       const event = tracker.update(null, null, now);
       slot.grip.update(null, null, now);
       slot.menuButton.update(null, null, now);
-      if (event) slot.orders.update(event, tracker.point, null);
+      if (event) slot.orders.update(event, tracker.point, null, now);
       if (event === "lost") slot.panelPinch = false;
     }
 
@@ -529,7 +529,7 @@ export class MixedReality {
     let ring: SquareId | null = null;
     for (const { slot, source, event, point, ray, target } of reads) {
       const before = slot.orders.mode;
-      if (this.state === "playing" && !this.twoHand) slot.orders.update(event, point, ray);
+      if (this.state === "playing" && !this.twoHand) slot.orders.update(event, point, ray, now);
       const after = slot.orders.mode;
       if (slot.kind === "controller") {
         if (before !== "ordering" && after === "ordering") pulse(source, 0.3, 20);
@@ -601,7 +601,8 @@ export class MixedReality {
 
   /** A side changed between hand and controller: whatever it was doing stands down. */
   private switchKind(slot: HandSlot, kind: InputKind | null): void {
-    if (slot.orders.mode !== "idle") slot.orders.update("lost", slot.pinch.point, null);
+    // `lost` never reads the clock.
+    if (slot.orders.mode !== "idle") slot.orders.update("lost", slot.pinch.point, null, 0);
     slot.pinch.reset();
     slot.trigger.reset();
     slot.grip.reset();
@@ -657,7 +658,7 @@ export class MixedReality {
     this.hitSource?.cancel();
     this.hitSource = null;
     for (const slot of this.hands.values()) {
-      slot.orders.update("lost", slot.pinch.point, null);
+      slot.orders.update("lost", slot.pinch.point, null, 0);
       this.switchKind(slot, null);
     }
     this.twoHand = null;
