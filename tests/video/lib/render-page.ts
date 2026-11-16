@@ -32,6 +32,8 @@ export async function renderPageShot(shot: PageShot, o: FilmOptions, log: (line:
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
+  // The film's own warnings (an operation that never settles, and so on) go to the log.
+  page.on("console", (m) => void (m.text().startsWith("film:") && log(`${shot.name}: ${m.text().slice(0, 300)}`)));
   try {
     await page.addInitScript(installFilmClock, { epochMs: Date.parse("2026-11-18T10:00:00Z"), seed: 1 });
     await page.addInitScript(filmInit);

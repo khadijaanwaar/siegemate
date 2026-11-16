@@ -47,7 +47,7 @@ interface Cut {
 const o = filmOptions();
 const W = o.outWidth, H = o.outHeight, FPS = o.fps;
 const s = H / 1080;
-const cut = JSON.parse(fs.readFileSync(new URL("./cut.json", import.meta.url), "utf8")) as Cut;
+const cut = JSON.parse(fs.readFileSync(process.env.CUT ?? new URL("./cut.json", import.meta.url), "utf8")) as Cut;
 const work = path.join(o.outDir, "cut");
 fs.mkdirSync(work, { recursive: true });
 const narrationDir = path.resolve(process.env.FILM_OUT ?? "film-out", "narration");
@@ -107,7 +107,7 @@ html, body { margin: 0; background: transparent; }
 const escape = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const caption = (text: string) => `<div class="caption">${escape(text).replace(/ · /g, " <b>·</b> ")}</div>`;
 const overlays: Array<{ png: string; start: number; end: number; fade: number }> = [];
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: "chrome" });
 try {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   let n = 0;
@@ -203,23 +203,26 @@ voiceLines.sort((a, b) => a.start - b.start).forEach((l, i, all) => {
   if (next && next.start < l.end + 0.15) console.warn(`[cut] ${l.id} runs into ${next.id} (${l.end.toFixed(2)} > ${next.start.toFixed(2)})`);
 });
 
-// Two-pass loudness: measure, then normalise linearly to -14 LUFS, -1 dBTP.
-const stats = (() => {
-  const r = execFileSync("sh", ["-c", `ffmpeg -hide_banner -i "${mix}" -af loudnorm=I=-14:TP=-1:LRA=11:print_format=json -f null - 2>&1`], { encoding: "utf8" });
-  return JSON.parse(r.slice(r.lastIndexOf("{"), r.lastIndexOf("}") + 1)) as Record<string, string>;
-})();
+const loudness = (file: string) => {
+  const r = execFileSync("sh", ["-c", `ffmpeg -hide_banner -i "${file}" -af loudnorm=I=-14:TP=-1:print_format=json -f null - 2>&1`], { encoding: "utf8" });
+  const j = JSON.parse(r.slice(r.lastIndexOf("{"), r.lastIndexOf("}") + 1)) as Record<string, string>;
+  return { i: Number(j.input_i), tp: Number(j.input_tp) };
+};
+// The gain that brings the mix to -14 LUFS, then an oversampled limiter a little under -1 dB. The limiter takes some
+// loudness off the fights' peaks, so measure again and add what is missing (a few rounds).
+const leveled = path.join(work, "leveled.wav");
+let gain = -14 - loudness(mix).i;
+for (let round = 0; round < 5; round++) {
+  ff(["-i", mix, "-af", `volume=${gain.toFixed(2)}dB,aresample=192000,alimiter=limit=0.8:attack=2:release=60:level=disabled,aresample=48000`, "-c:a", "pcm_s24le", leveled]);
+  const got = loudness(leveled).i;
+  if (Math.abs(got + 14) < 0.3) break;
+  gain += -14 - got;
+}
 const out = path.join(o.outDir, "siegemate.mp4");
-ff([
-  "-i", picture, "-i", mix,
-  "-af", `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}:offset=${stats.target_offset}:linear=true,aresample=48000`,
-  "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", "-t", total.toFixed(3), out,
-]);
-const final = (() => {
-  const r = execFileSync("sh", ["-c", `ffmpeg -hide_banner -i "${out}" -af loudnorm=I=-14:TP=-1:print_format=json -f null - 2>&1`], { encoding: "utf8" });
-  return JSON.parse(r.slice(r.lastIndexOf("{"), r.lastIndexOf("}") + 1)) as Record<string, string>;
-})();
+ff(["-i", picture, "-i", leveled, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", "-t", total.toFixed(3), out]);
+const final = loudness(out);
 fs.writeFileSync(
   path.join(o.outDir, "siegemate.json"),
-  `${JSON.stringify({ seconds: Math.round(total * 1000) / 1000, size: `${W}x${H}`, fps: FPS, loudness: { lufs: Number(final.input_i), truePeak: Number(final.input_tp) }, segments: placed.map((p) => ({ shot: p.name, from: p.from ?? 0, start: Math.round(p.start * 1000) / 1000, seconds: p.length, caption: p.caption })), lines: voiceLines }, null, 2)}\n`,
+  `${JSON.stringify({ seconds: Math.round(total * 1000) / 1000, size: `${W}x${H}`, fps: FPS, loudness: { lufs: final.i, truePeak: final.tp, gainDb: Math.round(gain * 100) / 100 }, segments: placed.map((p) => ({ shot: p.name, from: p.from ?? 0, start: Math.round(p.start * 1000) / 1000, seconds: p.length, caption: p.caption })), lines: voiceLines }, null, 2)}\n`,
 );
-console.log(`[cut] ${placed.length} segments, ${total.toFixed(1)} s, ${voiceLines.length} narration lines, ${final.input_i} LUFS / ${final.input_tp} dBTP -> ${out}`);
+console.log(`[cut] ${placed.length} segments, ${total.toFixed(1)} s, ${voiceLines.length} narration lines, ${final.i} LUFS / ${final.tp} dBTP -> ${out}`);

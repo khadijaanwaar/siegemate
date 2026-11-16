@@ -10,7 +10,7 @@ export default definePageShot({
   name: "i-offline",
   description: "The 2D page, network cut: e4, and the computer answers with no connection.",
   seconds: 7,
-  viewport: { width: 1280, height: 720, scale: 1.5 },
+  viewport: { width: 1280, height: 720, scale: process.env.QUALITY === "final" ? 1.5 : 0.75 },
   path: () => "/?quality=medium",
   async setup({ waitFor, wait, page }) {
     await waitFor(() => Boolean((window as any).__scene?.piece("e2") && (window as any).__xr), undefined, { maxMs: 40_000, label: "the armies" });
@@ -21,6 +21,9 @@ export default definePageShot({
   },
   async play({ wait, waitFor, mark, page }) {
     await wait(900);
+    // Every request from here fails at once, as with no network (the newest route wins over the film's own
+    // site route); then the browser goes offline too, so the page sees navigator.onLine false.
+    await page.context().route("**/*", (route) => route.abort("internetdisconnected"));
     await page.context().setOffline(true);
     mark("network-off");
     await wait(900);
