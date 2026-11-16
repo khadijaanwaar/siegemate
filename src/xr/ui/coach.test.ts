@@ -48,6 +48,9 @@ describe("coachCopy", () => {
     expect(coachCopy("place", "hands")).toMatch(/pinch/i);
     expect(coachCopy("place", "controllers")).toMatch(/trigger/i);
     expect(coachCopy("two-hands", "controllers")).toMatch(/grip/i);
+    // A two-hand grab has to close by the board: the hint says where.
+    expect(coachCopy("two-hands", "hands")).toMatch(/board/i);
+    expect(coachCopy("two-hands", "controllers")).toMatch(/board/i);
     for (const step of steps) {
       expect(coachCopy(step, "controllers")).not.toMatch(/pinch/i);
       expect(coachCopy(step, "hands")).not.toMatch(/trigger|grip/i);
