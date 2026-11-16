@@ -168,10 +168,15 @@ try {
     clock: { whiteMs: 0, blackMs: 0 },
     savedAt: Date.now(),
   };
+  // Let the machine's reply to d4 land (and its march finish) before the board is swapped.
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen) && !window.__xr.snapshot().thinking, null, { timeout: 15000 }).catch(() => undefined);
+  await page.waitForTimeout(3000);
   check(await page.evaluate((s) => window.__xr.resume(s), save), "a position one step from the crown stands up", promo.fen());
-  await page.waitForTimeout(1500); // the board rebuilds
+  await page.waitForTimeout(2500); // the board rebuilds
   await click("b7");
+  const picked = await page.evaluate(() => window.__xr.pointer("right"));
   await click("b8");
+  if (!(await page.evaluate(() => window.__xr.ui()))?.panels.includes("promote")) console.log(`     b7 click left: ${JSON.stringify(picked)}`);
   await page.waitForTimeout(400);
   const asking = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
   check(asking.ui?.panels.includes("promote"), "reaching the last rank shows the crown card in the headset", JSON.stringify(asking.ui));
