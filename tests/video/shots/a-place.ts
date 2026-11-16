@@ -22,14 +22,22 @@ export default defineShot({
   async play(ctx) {
     const { camera, right, game, wait, waitFor, mark } = ctx;
     ctx.showWindow(WINDOW_AT, 1.2, 300);
-    await wait(700);
-    const b = await game.menuButton();
-    if (!b) throw new Error("the menu has no mixed reality button");
-    const target = ctx.windowPoint(b.x, b.y);
+    await wait(500);
+    // The pointer comes in from the lower right toward the button; the menu may still be easing
+    // into place, so its position is read again on the way and the pointer ends on it.
+    const at = async () => {
+      const b = await game.menuButton();
+      if (!b) throw new Error("the menu has no mixed reality button");
+      return ctx.windowPoint(b.x, b.y);
+    };
+    let target = await at();
     ctx.cursorTo([target[0] + 0.22, target[1] - 0.16, target[2]], 0);
     await wait(150);
     ctx.cursorTo(target, 800);
-    await wait(950);
+    await wait(500);
+    target = await at();
+    ctx.cursorTo(target, 300);
+    await wait(450);
     ctx.cursorPress(true);
     mark("tap", { button: "Play on your table" });
     await wait(120);
