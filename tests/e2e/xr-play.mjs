@@ -144,7 +144,9 @@ try {
 
   // ---- the menu: pick Squire and start a new game from the headset.
   check(await page.evaluate(() => window.__xr.press("menu")), "Menu opens", "");
-  check((await page.evaluate(() => window.__xr.ui())).panels.includes("menu"), "the menu card shows", "");
+  const menuUi = await page.evaluate(() => window.__xr.ui());
+  check(menuUi.panels.includes("menu"), "the menu card shows", "");
+  check(menuUi.menu?.strength === "easy" && menuUi.menu?.side === "w", "the menu opens on the game's own strength and side", JSON.stringify(menuUi.menu));
   await page.evaluate(() => window.__xr.press("easy"));
   await page.evaluate(() => window.__xr.press("new"));
   await page.waitForTimeout(800);

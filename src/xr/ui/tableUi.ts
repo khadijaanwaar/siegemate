@@ -249,10 +249,10 @@ export class TableUi {
     return false;
   }
 
-  /** Tests and diagnostics: what is on show. */
-  describe(): { coach: CoachStep; panels: PanelName[]; pointer: Pointer } {
+  /** Tests and diagnostics: what is on show, and what the menu would start. */
+  describe(): { coach: CoachStep; panels: PanelName[]; pointer: Pointer; menu: { strength: Difficulty; side: Faction } } {
     const panels = (Object.keys(this.panels) as PanelName[]).filter((name) => this.panels[name].visible);
-    return { coach: this.coachStep, panels, pointer: this.pointer };
+    return { coach: this.coachStep, panels, pointer: this.pointer, menu: { strength: this.strength, side: this.side } };
   }
 
   /** Tests: the world-space centre of a visible button, or null. */
@@ -313,6 +313,7 @@ export class TableUi {
         break;
       case "menu":
         this.menuOpen = !this.menuOpen;
+        if (this.menuOpen) this.seedMenu();
         this.showMenu();
         break;
       case "close":
@@ -396,6 +397,14 @@ export class TableUi {
         { id: "menu", rect: [0.09, 0.04, 0.068, 0.034], label: "Menu", tone: this.menuOpen ? "selected" : "plain" },
       ],
     });
+  }
+
+  /** The menu opens on the game being played: its strength and the player's side. */
+  private seedMenu(): void {
+    const snapshot = this.controller.getSnapshot();
+    if (snapshot.mode !== "ai") return;
+    this.strength = snapshot.difficulty;
+    this.side = snapshot.playerColor;
   }
 
   private showMenu(): void {
