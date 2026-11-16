@@ -24,7 +24,7 @@ export default defineShot({
     return {};
   },
   // Wider than a player's working view, a little up from the board: the room around it is the subject.
-  firstView: () => ({ from: EYE, at: [0, 0.6, -0.7], hfovDeg: 84 }),
+  firstView: () => ({ from: EYE, at: [0.1, 0.6, -0.7], hfovDeg: 84 }),
   async play({ camera, left, wait, until, mark }) {
     left.place("parked", POKE_L);
     await wait(700);
@@ -35,9 +35,9 @@ export default defineShot({
       await left.poke("arena", { approachMs: 450 });
       mark("battleground", { to: step });
       // Look up into the room a little while it changes, then back.
-      camera.move({ from: EYE, at: [0, 0.72, -0.75], hfovDeg: 88 }, 1200);
+      camera.move({ from: EYE, at: [0.08, 0.72, -0.75], hfovDeg: 88 }, 1200);
       await wait(1500);
-      camera.move({ from: EYE, at: [0, 0.6, -0.7], hfovDeg: 84 }, 900);
+      camera.move({ from: EYE, at: [0.1, 0.6, -0.7], hfovDeg: 84 }, 900);
       await wait(900);
     }
     await left.poke("menu", { approachMs: 450 });

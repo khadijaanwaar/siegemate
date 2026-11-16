@@ -34,15 +34,17 @@ export default defineShot({
     mark("release", { square: "d5" });
     right.moveTo([d5[0] + 0.32, d5[1] + 0.03, d5[2] + 0.4], 1300);
     // Hold on the fight, then widen as the queen comes down the file.
-    await waitFor(() => (window as any).__xr.snapshot().sanList.length >= 3, undefined, { maxMs: 8000, label: "exd5 played" });
-    await game.settle(10_000);
+    // The fight on d5 ends when the computer starts thinking (or has already answered).
+    await waitFor(() => {
+      const s = (window as any).__xr.snapshot();
+      return s.sanList.length >= 4 || (s.sanList.length === 3 && !s.busy);
+    }, undefined, { maxMs: 10_000, label: "exd5 fought out" });
     mark("white-captured");
-    camera.move(close([(d5[0] + d8[0]) / 2, d5[1], (d5[2] + d8[2]) / 2 + 0.02], 58), 1600);
+    camera.move(close([(d5[0] + d8[0]) / 2, d5[1], (d5[2] + d8[2]) / 2 + 0.02], 58), 1400);
     await waitFor(() => (window as any).__xr.snapshot().sanList.length >= 4, undefined, { maxMs: 8000, label: "Qxd5 played" });
     mark("black-recaptures");
     await game.settle(10_000);
-    camera.move({ from: EYE, at: BOARD_VIEW.at, hfovDeg: 78 }, 1600);
-    await wait(1600);
-    await until(12);
+    camera.move({ from: EYE, at: BOARD_VIEW.at, hfovDeg: 78 }, 1400);
+    await wait(1400);
   },
 });
