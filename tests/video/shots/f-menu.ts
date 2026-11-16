@@ -12,7 +12,6 @@ export default defineShot({
   name: "f-menu",
   description: "Menu on the slab, Height ▲ twice (the board rises), Sound off and on: the headset's own controls.",
   seconds: 11,
-  needs: "Lane A: menu Height ▲/▼ and Sound/Music toggles (P1 5 and 10); button ids are guessed in the shot",
   async setup({ camera, game }) {
     camera.cut(ROOM_VIEW);
     await game.enter();
@@ -20,7 +19,7 @@ export default defineShot({
     await game.settle();
     return {};
   },
-  firstView: () => ({ from: EYE, at: [0.08, 0.56, -0.62], hfovDeg: 80 }),
+  firstView: () => ({ from: EYE, at: [0.13, 0.62, -0.64], hfovDeg: 82 }),
   async play({ left, page, wait, until, mark, waitFor }) {
     const first = async (ids: string[]) => (await page.evaluate((list) => list.find((id) => (window as any).__xr.buttonWorld(id)) ?? null, ids)) as string | null;
     left.place("parked", POKE_L);

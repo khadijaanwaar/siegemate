@@ -12,7 +12,6 @@ export default defineShot({
   name: "g-result",
   description: "Qxf7#: the queen takes f7, the result card rises; Share this battle shows the replay link as a QR code.",
   seconds: 13,
-  needs: "Lane C: the headset result card's \"Share this battle\" with the QR code (the card itself is there today)",
   replies: ["e7e5", "b8c6", "g8f6"],
   async setup({ camera, game }) {
     camera.cut(ROOM_VIEW);
@@ -25,7 +24,7 @@ export default defineShot({
     return { h5: await game.square("h5"), f7: await game.square("f7") };
   },
   firstView: ({ h5, f7 }) => close([(h5[0] + f7[0]) / 2, h5[1], (h5[2] + f7[2]) / 2 + 0.04], 50),
-  async play({ camera, right, page, wait, waitFor, until, mark }, { h5, f7 }) {
+  async play({ camera, right, game, page, wait, waitFor, until, mark }, { h5, f7 }) {
     right.place([h5[0] + 0.3, h5[1] + 0.05, h5[2] + 0.3], REACH_R);
     await wait(400);
     await right.glide(up(h5, 0.08), 1000, { q: REACH_R });
@@ -43,7 +42,9 @@ export default defineShot({
     // The result card: wait for it, then take it in with the board.
     await waitFor(() => (window as any).__xr.ui().panels.includes("result"), undefined, { maxMs: 8000, label: "the result card" });
     mark("result-card");
-    camera.move({ from: EYE, at: BOARD_VIEW.at, hfovDeg: 84 }, 1600);
+    // Close on the card (and later its QR code), from the seat.
+    const card = (await game.button("rematch")) ?? BOARD_VIEW.at;
+    camera.move(close([card[0] + 0.03, card[1] - 0.01, card[2]], 56), 1600);
     await wait(2200);
     const share = (await page.evaluate((ids) => ids.find((id) => (window as any).__xr.buttonWorld(id)) ?? null, SHARE)) as string | null;
     if (share) {

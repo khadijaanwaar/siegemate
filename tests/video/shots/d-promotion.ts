@@ -12,7 +12,6 @@ export default defineShot({
   name: "d-promotion",
   description: "The b7 pawn takes the rook on a8; the headset's promotion card comes up; a poke on Queen crowns it.",
   seconds: 12,
-  needs: "Lane A: the headset promotion card (src/xr, P0 1); before it lands the game freezes at the 2D picker",
   // 1.e4 d5 2.exd5 c6 3.dxc6 Nf6 4.cxb7 Bf5, and after the promotion a quiet reply.
   replies: ["d7d5", "c7c6", "g8f6", "c8f5", "e7e6"],
   async setup({ camera, game }) {
