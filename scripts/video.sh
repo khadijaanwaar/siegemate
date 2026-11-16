@@ -70,7 +70,9 @@ fi
 PORT=$((4900 + RANDOM % 90))
 npx vite preview --outDir film-out/.build --port "$PORT" --strictPort >/dev/null 2>&1 &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null || true' EXIT
+RENDER=
+# Stopping this script stops the shot in progress (it lets the GPU lock go) and the server.
+trap 'kill $SERVER 2>/dev/null || true; [ -z "$RENDER" ] || kill $RENDER 2>/dev/null || true' EXIT
 trap 'exit 130' INT TERM
 for _ in $(seq 1 60); do
   curl -sf "http://localhost:$PORT/" >/dev/null && break
@@ -83,11 +85,16 @@ for kv in ${EXTRA[@]+"${EXTRA[@]}"}; do export "${kv?}"; done
 FAILED=()
 DONE=()
 for shot in $NAMES; do
-  if node --no-warnings tests/video/render.ts "$shot"; then
+  # In the background and waited for, so a stop reaches the trap at once.
+  node --no-warnings tests/video/render.ts "$shot" &
+  RENDER=$!
+  if wait "$RENDER"; then
+    RENDER=
     node --no-warnings tests/video/deliver.ts stills "$shot"
     node --no-warnings tests/video/deliver.ts sound "$shot" || echo "[film] $shot: no game sound laid in" >&2
     DONE+=("$shot")
   else
+    RENDER=
     FAILED+=("$shot")
   fi
 done
