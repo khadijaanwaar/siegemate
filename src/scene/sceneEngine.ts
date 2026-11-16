@@ -150,6 +150,8 @@ const DEFAULT_FOV = 46;
 const TABLE_CREST_SCALE = 0.65;
 /** Light on a real table: sky and key intensities, and the exposure lift over the hall's. */
 const TABLE_LIGHT = { sky: 2.4, key: 2.2, exposure: 1.15 } as const;
+/** Longest a capture on the table waits for its strike and death clips to arrive (see armCombat). */
+const TABLE_CLIP_WAIT_S = 0.8;
 
 /** The battleground after `theme` in the picker's order (the headset menu steps through them so). */
 function nextArenaOf(theme: ArenaTheme): ArenaTheme {
@@ -2124,7 +2126,9 @@ export class SceneEngine {
    * in the background at start-up, but a request dropped during the opening
    * burst would otherwise leave a figure that kills without ever swinging — so
    * a capture asks for them again here, behind a ceiling that keeps a bad
-   * network from stopping the game.
+   * network from stopping the game. On a table the ceiling is short: a player
+   * holding a figure in their hand notices a frozen board long before a fight
+   * that starts without its swing.
    */
   private async armCombat(attacker: PieceView, victim: PieceView): Promise<void> {
     const ready = attacker.hasClip("attack") && (victim.hasClip("death") || !victim.hasAnimations);
@@ -2134,7 +2138,7 @@ export class SceneEngine {
         this.factory.ensureClip(attacker.color, attacker.kind, "attack"),
         this.factory.ensureClip(victim.color, victim.kind, "death"),
       ]),
-      wait(2.4),
+      wait(this.table ? TABLE_CLIP_WAIT_S : 2.4),
     ]);
   }
 
