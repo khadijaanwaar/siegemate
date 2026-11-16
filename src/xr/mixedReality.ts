@@ -345,8 +345,8 @@ export class MixedReality {
       ? { center: this.rig.root.position, half: BOARD_HALF_UNITS * this.rig.unitsToMeters }
       : null;
     const arena = this.engine.getArena();
-    if (this.room.current !== arena) this.room.setTheme(arena, this.head.position, board);
-    this.room.update(dt, this.head.position, board, this.rig.root.rotation.y);
+    if (this.room.current !== arena) this.room.setTheme(arena, this.head.position, board, this.head.yaw);
+    this.room.update(dt, this.head.position, board, this.rig.root.rotation.y, this.head.yaw);
   }
 
   /** The first-move lesson pulses the suggested move on the board. */

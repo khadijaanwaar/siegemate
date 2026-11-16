@@ -96,8 +96,8 @@ export class RoomStyler {
     return this.theme;
   }
 
-  /** Switches the room to a battleground, crossfading from the last one. */
-  setTheme(theme: ArenaTheme, head: THREE.Vector3, board: BoardArea | null): void {
+  /** Switches the room to a battleground, crossfading from the last one. `headYaw`: where the player faces. */
+  setTheme(theme: ArenaTheme, head: THREE.Vector3, board: BoardArea | null, headYaw: number | null = null): void {
     if (theme === this.theme) return;
     this.from.alpha = this.veil.material.opacity;
     this.from.color.copy(this.veil.material.color);
@@ -109,7 +109,7 @@ export class RoomStyler {
     const { weather } = ROOM_THEMES[theme];
     this.kind = weather.kind;
     this.count = Math.min(POOL, weather.count);
-    for (let i = 0; i < this.count; i += 1) spawnParticle(this.kind, head, board, this.random, this.positions[i]);
+    for (let i = 0; i < this.count; i += 1) spawnParticle(this.kind, head, board, this.random, this.positions[i], true, headYaw);
     const dotsMaterial = this.dots.material;
     dotsMaterial.color.setHex(weather.color);
     dotsMaterial.blending = this.kind === "embers" || this.kind === "pollen" ? THREE.AdditiveBlending : THREE.NormalBlending;
@@ -122,8 +122,12 @@ export class RoomStyler {
     this.streaks.geometry.setDrawRange(0, this.count * 2);
   }
 
-  /** Every headset frame. `board` keeps the weather off the pieces; `table` is where the glow lies. */
-  update(dt: number, head: THREE.Vector3, board: BoardArea | null, tableYaw: number): void {
+  /**
+   * Every headset frame. `board` keeps the weather off the pieces and is where
+   * the glow lies; `headYaw` keeps it out of the player's face (without it the
+   * board's direction stands in for the gaze).
+   */
+  update(dt: number, head: THREE.Vector3, board: BoardArea | null, tableYaw: number, headYaw: number | null = null): void {
     if (!this.theme) return;
     const theme = ROOM_THEMES[this.theme];
     this.fade = Math.min(1, this.fade + dt / FADE_S);
@@ -155,7 +159,7 @@ export class RoomStyler {
     for (let i = 0; i < this.count; i += 1) {
       this.phases[i] += dt;
       const point = this.positions[i];
-      stepParticle(this.kind, point, dt, this.phases[i], head, board, this.random);
+      stepParticle(this.kind, point, dt, this.phases[i], head, board, this.random, headYaw);
       if (this.kind === "rain") {
         streakArray.setXYZ(i * 2, point.x, point.y, point.z);
         streakArray.setXYZ(i * 2 + 1, point.x - 0.012, point.y + 0.09, point.z);
