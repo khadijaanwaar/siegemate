@@ -21,7 +21,7 @@ import { TableRig } from "../xr/tableRig";
 import { DEFAULT_BOARD_SIZE } from "../xr/manipulate";
 import { APP_NAME } from "../brand";
 import { setMatchInProgress } from "../app/updateGate";
-import { clearSavedGame, saveGame } from "../core/persist";
+import { clearSavedGame, saveGame, type SavedGame } from "../core/persist";
 import { loadStats, recordGame, saveStats, type PlayerStats } from "../core/stats";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
@@ -535,6 +535,8 @@ export function GameShell() {
       startVsComputer: (difficulty: "easy" | "medium" | "hard" = "easy") =>
         startMatch({ mode: "ai", difficulty, playerColor: "w", clockMinutes: null }),
       move: (from: string, to: string) => controller.tryMove(from, to),
+      /** Tests: stand a position up from a save (PGN and FEN), e.g. a pawn one step from its crown. */
+      resume: (save: SavedGame) => controller.resume(save),
       pinch: (hand: XRHandedness) => mixedRef.current?.debugPinch(hand) ?? null,
       pointer: (hand: XRHandedness) => mixedRef.current?.debugPointer(hand) ?? null,
       buttonWorld: (id: string) => mixedRef.current?.debugButtonWorld(id) ?? null,

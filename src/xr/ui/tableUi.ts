@@ -2,10 +2,11 @@ import * as THREE from "three";
 
 import type { GameController } from "../../core/gameController";
 import { loadStats, winRate } from "../../core/stats";
-import type { Difficulty, Faction, GameSnapshot } from "../../core/types";
+import type { Difficulty, Faction, GameSnapshot, PieceKind } from "../../core/types";
 import type { TableRig } from "../tableRig";
 import { CanvasPanel, type PanelButton } from "./canvasPanel";
 import { Coach, coachCopy, type CoachInput, type CoachStep, type Pointer } from "./coach";
+import { PROMOTION_PANEL, promotionButtons, promotionKindOf } from "./layouts";
 import { UI } from "./palette";
 import { PokeTracker } from "./poke";
 
@@ -25,9 +26,12 @@ export interface TableUiActions {
   exit(): void;
   cycleArena(): void;
   arenaLabel(): string;
+  /** The side whose pawn waits for its crown, or null. */
+  promotion(): Faction | null;
+  promote(kind: PieceKind): void;
 }
 
-type PanelName = "coach" | "slab" | "menu" | "result" | "perf";
+type PanelName = "coach" | "slab" | "menu" | "result" | "perf" | "promote";
 
 /** `?debug` shows a frame-rate card beside the board (for testing on a device). */
 const SHOW_PERF = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
@@ -83,6 +87,8 @@ export class TableUi {
   /** The battleground name the menu was last drawn with. */
   private menuArena = "";
   private side: Faction = "w";
+  /** The side the promotion card is open for. */
+  private promoting: Faction | null = null;
   private readonly unsubscribe: (() => void)[] = [];
   private readonly head = new THREE.Vector3();
   private headYaw = 0;
@@ -100,6 +106,7 @@ export class TableUi {
       menu: new CanvasPanel(0.26, 0.236),
       result: new CanvasPanel(0.28, 0.13),
       perf: new CanvasPanel(0.17, 0.05),
+      promote: new CanvasPanel(PROMOTION_PANEL.width, PROMOTION_PANEL.height),
     };
     for (const panel of Object.values(this.panels)) {
       panel.visible = false;
@@ -148,6 +155,8 @@ export class TableUi {
       this.pendingResult = false;
       this.showResult();
     }
+    const promoting = playing ? this.actions.promotion() : null;
+    if (promoting !== this.promoting) this.showPromotion(promoting);
     if (!playing) {
       this.panels.menu.visible = false;
       this.panels.result.visible = false;
@@ -290,6 +299,11 @@ export class TableUi {
 
   private press(panel: CanvasPanel, id: string): void {
     panel.flash(id);
+    const crown = promotionKindOf(id);
+    if (crown) {
+      this.actions.promote(crown);
+      return;
+    }
     switch (id) {
       case "skip":
         this.coach.skip();
@@ -370,7 +384,7 @@ export class TableUi {
 
   private refreshStatus(): void {
     const snapshot = this.controller.getSnapshot();
-    const key = [snapshot.status, snapshot.turn, snapshot.thinking, snapshot.inCheck, snapshot.canUndo, this.menuOpen].join("|");
+    const key = [snapshot.status, snapshot.turn, snapshot.thinking, snapshot.inCheck, snapshot.canUndo, this.menuOpen, this.promoting].join("|");
     if (key === this.statusKey) return;
     this.statusKey = key;
     const panel = this.panels.slab;
@@ -378,7 +392,7 @@ export class TableUi {
     this.setPanel(panel, {
       lines: [{ text: status.text, size: 0.012, y: 0.02, color: status.color }],
       buttons: [
-        { id: "undo", rect: [0.012, 0.04, 0.068, 0.034], label: "Undo", disabled: !snapshot.canUndo },
+        { id: "undo", rect: [0.012, 0.04, 0.068, 0.034], label: "Undo", disabled: !snapshot.canUndo || this.promoting !== null },
         { id: "menu", rect: [0.09, 0.04, 0.068, 0.034], label: "Menu", tone: this.menuOpen ? "selected" : "plain" },
       ],
     });
@@ -409,6 +423,19 @@ export class TableUi {
     this.setPanel(panel, {
       lines: [{ text: "Strength", size: 0.009, y: 0.02, color: UI.muted }],
       buttons,
+    });
+  }
+
+  /** The crown card: shown while a pawn of `color` waits on the last rank, hidden at null. */
+  private showPromotion(color: Faction | null): void {
+    this.promoting = color;
+    this.statusKey = ""; // Undo waits for the choice
+    const panel = this.panels.promote;
+    panel.visible = color !== null;
+    if (color === null) return;
+    this.setPanel(panel, {
+      lines: [{ text: "Promote your pawn to", size: 0.011, y: 0.017, color: color === "w" ? UI.azure : UI.ember }],
+      buttons: promotionButtons(),
     });
   }
 
@@ -469,6 +496,8 @@ export class TableUi {
     place(this.panels.perf, new THREE.Vector3(-half - 0.11, 0.02, half - 0.06), "tilt");
     place(this.panels.menu, new THREE.Vector3(half + 0.13, 0.16, half - 0.12), "player");
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
+    // On the player's edge of the board, low: in poke reach, clear of the far rank where the pawn stands.
+    place(this.panels.promote, new THREE.Vector3(0, 0.07, half + 0.05), "player");
   }
 }
 

@@ -8,6 +8,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Chess } from "chess.js";
 import { chromium } from "playwright";
 
 import { takeGpuLock } from "../../tools/gpu-lock.mjs";
@@ -141,6 +142,36 @@ try {
   const menuClosed = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
   check(!menuClosed.ui?.panels.includes("menu"), "and closes it", JSON.stringify(menuClosed.ui));
   check(menuClosed.fen === fenBeforeClose, "a press on a panel never reaches the board behind it", menuClosed.fen);
+
+  // ---- promotion: a pawn on b7, b8 empty. Click b7, click b8: the crown card shows in the
+  // headset (no picker hangs in front of the desktop camera); its Knight button, pressed along
+  // the ray, crowns a knight and the game goes on.
+  const promo = new Chess();
+  for (const san of ["a4", "b5", "axb5", "a6", "bxa6", "Bb7", "axb7", "Nc6"]) promo.move(san);
+  const save = {
+    version: 1,
+    options: { mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null },
+    pgn: promo.pgn(),
+    fen: promo.fen(),
+    clock: { whiteMs: 0, blackMs: 0 },
+    savedAt: Date.now(),
+  };
+  check(await page.evaluate((s) => window.__xr.resume(s), save), "a position one step from the crown stands up", promo.fen());
+  await page.waitForTimeout(1500); // the board rebuilds
+  await click("b7");
+  await click("b8");
+  await page.waitForTimeout(400);
+  const asking = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
+  check(asking.ui?.panels.includes("promote"), "reaching the last rank shows the crown card in the headset", JSON.stringify(asking.ui));
+  check(asking.fen === promo.fen(), "the pawn waits for the choice", asking.fen);
+  await pressAlongRay("promote-n");
+  await page.waitForFunction(() => window.__xr.snapshot().fen.startsWith("rN1qkbnr"), null, { timeout: 5000 }).catch(() => undefined);
+  const crowned = await page.evaluate(() => ({ ui: window.__xr.ui(), fen: window.__xr.snapshot().fen }));
+  check(crowned.fen.startsWith("rN1qkbnr"), "pressing Knight on the card crowns a knight on b8", crowned.fen);
+  check(!crowned.ui?.panels.includes("promote"), "and the card goes away", JSON.stringify(crowned.ui));
+  await page.waitForFunction(() => / w /.test(window.__xr.snapshot().fen), null, { timeout: 15000 }).catch(() => undefined);
+  check(/ w /.test(await page.evaluate(() => window.__xr.snapshot().fen)), "the machine replies after the crown", "");
+  await page.waitForTimeout(3000); // let the reply's march finish
 
   // ---- both grips pull apart: the board grows and the size is kept.
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());

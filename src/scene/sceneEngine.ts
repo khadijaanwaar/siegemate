@@ -971,6 +971,8 @@ export class SceneEngine {
   /** Which candidate the pointer is over, if any. */
   private promotionHover: PieceKind | null = null;
   private promotionResolve: ((kind: PieceKind) => void) | null = null;
+  /** The side whose pawn is waiting to be crowned (the headset shows its own card for it). */
+  private promotionColor: Faction | null = null;
   /** Scratch vector for the picker's placement, to keep the frame allocation-free. */
   private pickerScratch = new THREE.Vector3();
 
@@ -1226,6 +1228,7 @@ export class SceneEngine {
     this.controller.setAnimator((event) => this.animateMove(event));
     this.controller.on("state", (snapshot) => this.onState(snapshot));
     this.controller.on("reset", () => this.rebuildPieces());
+    this.controller.on("reset", () => this.dropPromotion());
     this.controller.on("illegal", ({ from }) => this.rejectMove(from));
     this.controller.on("gameover", () => void this.playEndCinematic());
     this.controller.on("premove", (premoves) => this.onPremoveChanged(premoves));
@@ -1268,6 +1271,8 @@ export class SceneEngine {
   enterTable(rig: TableRig): void {
     if (this.table) return;
     this.clearSelection();
+    // A crown asked for in the hall is answered on the headset card instead.
+    if (this.promotionGroup) this.closePromotionPicker();
     const scenery = [this.hall.group, this.battlefield.group, this.jungle.group, this.dressing.group, this.landmarks.group];
     this.tableRestore = {
       background: this.scene.background,
@@ -1341,6 +1346,8 @@ export class SceneEngine {
     this.idle.setBuckets(QUALITY_SETTINGS[this.preset].idleUpdateEvery);
     this.refreshMaterials();
     this.handleResize();
+    // A crown still unanswered when the headset came off: ask in the hall.
+    if (this.promotionResolve && this.promotionColor) this.buildPromotionPicker(this.promotionColor);
   }
 
   /** XR: the square and figure a hand or controller ray (world space) points at. */
@@ -1358,7 +1365,7 @@ export class SceneEngine {
 
   /** XR: a ray pinch or trigger released over `square` (null: off the board). Same rules as a click. */
   tapSquare(square: SquareId | null): void {
-    if (!this.interactive) return;
+    if (!this.interactive || this.promotionResolve) return;
     this.handleSquareTap(square, square ? (this.pieces.get(square) ?? null) : null);
   }
 
@@ -1429,7 +1436,7 @@ export class SceneEngine {
 
   /** XR: a pinch closed on the figure on `square`. True when it is now the one being ordered. */
   beginOrder(square: SquareId): boolean {
-    if (!this.interactive) return false;
+    if (!this.interactive || this.promotionResolve) return false;
     if (this.selected !== square) this.handleSquareTap(square, this.pieces.get(square) ?? null);
     return this.selected === square;
   }
@@ -1441,7 +1448,7 @@ export class SceneEngine {
    * (null) stands down.
    */
   releaseOrder(square: SquareId | null): void {
-    if (!this.interactive) return;
+    if (!this.interactive || this.promotionResolve) return;
     if (square !== null && square === this.selected) return;
     this.handleSquareTap(square, square ? (this.pieces.get(square) ?? null) : null);
   }
@@ -4617,15 +4624,34 @@ export class SceneEngine {
     return true;
   }
 
+  /**
+   * The side whose pawn waits for its crown, or null. On a table there is no
+   * picker in the scene (it would hang in front of the desktop camera): the
+   * headset shows its own card and answers through {@link choosePromotion}.
+   */
+  get pendingPromotion(): Faction | null {
+    return this.promotionResolve ? this.promotionColor : null;
+  }
+
   private requestPromotion(color: Faction): Promise<PieceKind> {
-    this.buildPromotionPicker(color);
+    this.promotionColor = color;
+    if (!this.table) this.buildPromotionPicker(color);
     return new Promise<PieceKind>((resolve) => {
       this.promotionResolve = (kind) => {
         this.promotionResolve = null;
+        this.promotionColor = null;
         this.closePromotionPicker();
         resolve(kind);
       };
     });
+  }
+
+  /** A new game (or a resumed one) abandons a crown that was still being chosen. */
+  private dropPromotion(): void {
+    if (!this.promotionResolve) return;
+    this.promotionResolve = null;
+    this.promotionColor = null;
+    this.closePromotionPicker();
   }
 
   // -------------------------------------------------------------- interaction

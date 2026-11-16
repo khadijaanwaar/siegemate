@@ -144,6 +144,10 @@ export class MixedReality {
       exit: () => void this.exit(),
       cycleArena: () => this.hooks.onArena?.(nextArena(this.engine.getArena())),
       arenaLabel: () => ARENA_LOOKS[this.engine.getArena()].label,
+      promotion: () => this.engine.pendingPromotion,
+      promote: (kind) => {
+        this.engine.choosePromotion(kind);
+      },
     });
     this.rig.setScale(loadBoardSize(safeStorage()));
   }
