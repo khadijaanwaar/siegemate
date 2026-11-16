@@ -18,7 +18,7 @@ export default defineShot({
     return { e4: await game.square("e4"), d5: await game.square("d5"), d8: await game.square("d8") };
   },
   // Close on the two pawns, from the seat (a lens move, not a lean: the room stays true).
-  firstView: ({ e4, d5 }) => close([(e4[0] + d5[0]) / 2 + 0.02, e4[1], (e4[2] + d5[2]) / 2 + 0.03], 48),
+  firstView: ({ e4, d5 }) => close([(e4[0] + d5[0]) / 2 + 0.08, e4[1], (e4[2] + d5[2]) / 2 + 0.03], 56),
   async play({ camera, right, game, wait, waitFor, until, mark }, { e4, d5, d8 }) {
     right.place([e4[0] + 0.3, e4[1] + 0.04, e4[2] + 0.25], REACH_R);
     await wait(400);
@@ -40,7 +40,7 @@ export default defineShot({
       return s.sanList.length >= 4 || (s.sanList.length === 3 && !s.busy);
     }, undefined, { maxMs: 10_000, label: "exd5 fought out" });
     mark("white-captured");
-    camera.move(close([(d5[0] + d8[0]) / 2, d5[1], (d5[2] + d8[2]) / 2 + 0.02], 58), 1400);
+    camera.move(close([(d5[0] + d8[0]) / 2 + 0.07, d5[1], (d5[2] + d8[2]) / 2 + 0.02], 62), 1400);
     await waitFor(() => (window as any).__xr.snapshot().sanList.length >= 4, undefined, { maxMs: 8000, label: "Qxd5 played" });
     mark("black-recaptures");
     await game.settle(10_000);

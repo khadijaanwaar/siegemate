@@ -584,8 +584,6 @@ export function installFrameTools(): void {
   const PALM = ["wrist", "thumb-metacarpal", "index-finger-phalanx-proximal", "middle-finger-phalanx-proximal", "ring-finger-phalanx-proximal", "pinky-finger-phalanx-proximal", "pinky-finger-metacarpal"];
   const out = document.createElement("canvas");
   const layer = document.createElement("canvas");
-  const rim = document.createElement("canvas");
-  const lines = document.createElement("canvas");
 
   const project = (v: { proj: number[]; inv: number[] }, p: number[], W: number, H: number) => {
     const m = v.inv, P = v.proj;
@@ -596,7 +594,7 @@ export function installFrameTools(): void {
     if (cw <= 0.01) return null;
     const cx = P[0] * x + P[8] * z;
     const cy = P[5] * y + P[9] * z;
-    return { x: ((cx / cw) * 0.5 + 0.5) * W, y: (1 - ((cy / cw) * 0.5 + 0.5)) * H, r: ((p[3] ?? 0.01) * P[5] * H) / 2 / cw };
+    return { x: ((cx / cw) * 0.5 + 0.5) * W, y: (1 - ((cy / cw) * 0.5 + 0.5)) * H, r: ((p[3] ?? 0.01) * P[5] * H) / 2 / cw, d: cw };
   };
 
   /** The headset's own view (ipd 0: the eye is the head), for frames without a session. */
@@ -645,7 +643,7 @@ export function installFrameTools(): void {
     }
     if (!gameCanvas) throw new Error("film: no game canvas");
     const [W, H] = !xr && a.size ? a.size : [gameCanvas.width, gameCanvas.height];
-    for (const c of [out, layer, rim, lines]) {
+    for (const c of [out, layer]) {
       if (c.width !== W || c.height !== H) {
         c.width = W;
         c.height = H;
@@ -699,15 +697,17 @@ export function installFrameTools(): void {
       }
     }
 
-    // The player's hands: a smoky see-through fill with a thin warm rim, fading out past the wrist,
-    // in the spirit of the Quest system hand. Drawn over the game: a hand at the board is nearer
-    // the eye than anything it reaches for.
-    if (xr && a.handLook.fill + a.handLook.rim > 0) {
+    // The player's hands, drawn by the film from the joints the session reports: a plain stand-in
+    // made of skin-toned capsules (one per bone, as wide as IWER's joint radii) over a palm, lit from
+    // above, nearest bones drawn last, the whole hand at about three quarters opacity and fading out
+    // past the wrist. Drawn over the game: a hand at the board is nearer the eye than what it reaches.
+    if (xr && a.handLook.fill > 0) {
+      const SKIN = "#d9a585", EDGE = "#7a4b36", LIGHT = "#f3cdb2", SHADE = "#b98266";
       for (const side of ["left", "right"]) {
         if (a.hands[side]?.shown === false) continue;
         const joints = w.__filmHands?.[side];
         if (!joints?.wrist) continue;
-        const pts: Record<string, { x: number; y: number; r: number }> = {};
+        const pts: Record<string, { x: number; y: number; r: number; d: number }> = {};
         let ok = true;
         for (const name of Object.keys(joints)) {
           const p = project(view, joints[name], W, H);
@@ -715,80 +715,86 @@ export function installFrameTools(): void {
           else pts[name] = p;
         }
         if (!ok) continue;
+        const t = Math.max(1, H / 900);
         const l = layer.getContext("2d")!;
         l.globalCompositeOperation = "source-over";
+        l.globalAlpha = 1;
         l.clearRect(0, 0, W, H);
-        l.fillStyle = "#fff";
-        l.strokeStyle = "#fff";
         l.lineCap = "round";
         l.lineJoin = "round";
-        l.beginPath();
-        PALM.forEach((n, i) => (i ? l.lineTo(pts[n].x, pts[n].y) : l.moveTo(pts[n].x, pts[n].y)));
-        l.closePath();
-        l.fill();
+        type Part = { d: number; draw(): void };
+        const parts: Part[] = [];
+        const palm = PALM.map((n) => pts[n]!);
+        parts.push({
+          d: palm.reduce((s, p) => s + p.d, 0) / palm.length + 0.01,
+          draw() {
+            const path = () => {
+              l.beginPath();
+              palm.forEach((p, i) => (i ? l.lineTo(p.x, p.y) : l.moveTo(p.x, p.y)));
+              l.closePath();
+            };
+            const ys = palm.map((p) => p.y);
+            const g = l.createLinearGradient(0, Math.min(...ys), 0, Math.max(...ys));
+            g.addColorStop(0, LIGHT);
+            g.addColorStop(0.45, SKIN);
+            g.addColorStop(1, SHADE);
+            path();
+            l.lineWidth = 2 * Math.max(...palm.map((p) => p.r)) * 0.9;
+            l.strokeStyle = EDGE;
+            l.stroke();
+            l.lineWidth = Math.max(1, l.lineWidth - 2 * t);
+            l.strokeStyle = SKIN;
+            l.stroke();
+            l.fillStyle = g;
+            l.fill();
+          },
+        });
         for (const chain of HAND) {
-          for (let i = 1; i < chain.length; i++) {
+          for (let i = 2; i < chain.length; i++) {
             const p0 = pts[chain[i - 1]], p1 = pts[chain[i]];
             if (!p0 || !p1) continue;
-            l.lineWidth = Math.max(2, 2 * Math.min(p0.r, p1.r) * 0.92);
-            l.beginPath();
-            l.moveTo(p0.x, p0.y);
-            l.lineTo(p1.x, p1.y);
-            l.stroke();
-          }
-          const tip = pts[chain[chain.length - 1]];
-          if (tip) {
-            l.beginPath();
-            l.arc(tip.x, tip.y, Math.max(1, tip.r), 0, Math.PI * 2);
-            l.fill();
+            const width = Math.max(2, 2 * Math.min(p0.r, p1.r) * 0.95);
+            const tip = i === chain.length - 1;
+            parts.push({
+              d: (p0.d + p1.d) / 2,
+              draw() {
+                const line = (wd: number, color: string, dy = 0) => {
+                  l.lineWidth = wd;
+                  l.strokeStyle = color;
+                  l.beginPath();
+                  l.moveTo(p0.x, p0.y + dy);
+                  l.lineTo(p1.x, p1.y + dy);
+                  l.stroke();
+                };
+                line(width + 2 * t, EDGE);
+                line(width, SKIN);
+                line(width * 0.4, LIGHT, -width * 0.18);
+                if (tip) {
+                  // The nail side of the tip catches a little more light.
+                  l.fillStyle = LIGHT;
+                  l.beginPath();
+                  l.arc(p1.x, p1.y - width * 0.12, width * 0.22, 0, Math.PI * 2);
+                  l.fill();
+                }
+              },
+            });
           }
         }
-        // The whole hand, fading out just past the wrist (no forearm).
+        parts.sort((u, v) => v.d - u.d);
+        for (const part of parts) part.draw();
+        // Fading out just past the wrist (no forearm).
         const wr = pts.wrist, mid = pts["middle-finger-phalanx-proximal"];
         if (wr && mid) {
-          const g = l.createLinearGradient(wr.x - (mid.x - wr.x) * 0.45, wr.y - (mid.y - wr.y) * 0.45, wr.x + (mid.x - wr.x) * 0.2, wr.y + (mid.y - wr.y) * 0.2);
+          const g = l.createLinearGradient(wr.x - (mid.x - wr.x) * 0.4, wr.y - (mid.y - wr.y) * 0.4, wr.x + (mid.x - wr.x) * 0.15, wr.y + (mid.y - wr.y) * 0.15);
           g.addColorStop(0, "rgba(0,0,0,0)");
           g.addColorStop(1, "rgba(0,0,0,1)");
           l.globalCompositeOperation = "destination-in";
           l.fillStyle = g;
           l.fillRect(0, 0, W, H);
+          l.globalCompositeOperation = "source-over";
         }
-        // Rim: the silhouette grown by a pixel or two, minus the silhouette.
-        const t = Math.max(1, Math.round(H / 640));
-        const r = rim.getContext("2d")!;
-        r.globalCompositeOperation = "source-over";
-        r.clearRect(0, 0, W, H);
-        for (const [ox, oy] of [[t, 0], [-t, 0], [0, t], [0, -t], [t, t], [-t, -t], [t, -t], [-t, t]]) r.drawImage(layer, ox, oy);
-        r.globalCompositeOperation = "destination-out";
-        r.drawImage(layer, 0, 0);
-        r.globalCompositeOperation = "source-in";
-        r.fillStyle = "#fff6e8";
-        r.fillRect(0, 0, W, H);
-        // Each finger traced faintly from the knuckle (inside the silhouette), so a closed hand still
-        // reads as fingers.
-        const f = lines.getContext("2d")!;
-        f.globalCompositeOperation = "source-over";
-        f.clearRect(0, 0, W, H);
-        f.strokeStyle = "rgba(255,246,232,0.5)";
-        f.lineWidth = Math.max(1, t * 0.8);
-        f.lineCap = "round";
-        f.lineJoin = "round";
-        for (const chain of HAND) {
-          f.beginPath();
-          chain.slice(2).forEach((n, i) => (pts[n] ? (i ? f.lineTo(pts[n].x, pts[n].y) : f.moveTo(pts[n].x, pts[n].y)) : undefined));
-          f.stroke();
-        }
-        f.globalCompositeOperation = "destination-in";
-        f.drawImage(layer, 0, 0);
-        // Fill: the silhouette tinted a smoky warm grey.
-        l.globalCompositeOperation = "source-in";
-        l.fillStyle = "#8c857c";
-        l.fillRect(0, 0, W, H);
         ctx.globalAlpha = a.handLook.fill;
         ctx.drawImage(layer, 0, 0);
-        ctx.globalAlpha = a.handLook.rim;
-        ctx.drawImage(rim, 0, 0);
-        ctx.drawImage(lines, 0, 0);
         // The pinch: a small ring between thumb and index tips that closes to a dot as they meet,
         // like the headset's own pinch cursor, so the viewer sees each pinch land.
         const th = joints["thumb-tip"], ix = joints["index-finger-tip"];
@@ -797,7 +803,7 @@ export function installFrameTools(): void {
           const gap = Math.hypot(th[0] - ix[0], th[1] - ix[1], th[2] - ix[2]);
           const k = Math.min(1, Math.max(0, (gap - 0.012) / 0.05));
           const s = H / 1080;
-          ctx.globalAlpha = a.handLook.rim * (0.95 - 0.35 * k);
+          ctx.globalAlpha = a.handLook.rim * (0.9 - 0.4 * k);
           ctx.strokeStyle = "#fff6e8";
           ctx.fillStyle = "#fff6e8";
           ctx.lineWidth = 2 * s;

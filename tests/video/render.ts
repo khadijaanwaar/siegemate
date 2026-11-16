@@ -68,7 +68,7 @@ await page.evaluate(() => {
 if (shot.replies?.length) await page.evaluate((m) => void (window as any).__filmReplies.push(...m), shot.replies);
 
 const format = o.quality === "final" ? "image/png" : "image/jpeg";
-const ctx = new ShotContext(page, { width: o.width, height: o.height, stride: SIM_HZ / o.fps, hfovDeg: o.hfovDeg, format, handLook: { fill: 0.32, rim: 0.8 }, log }, ROOM_VIEW, shot.sway);
+const ctx = new ShotContext(page, { width: o.width, height: o.height, stride: SIM_HZ / o.fps, hfovDeg: o.hfovDeg, format, handLook: { fill: 0.78, rim: 0.75 }, log }, ROOM_VIEW, shot.sway);
 const mp4 = path.join(o.outDir, `${shot.name}.mp4`);
 const s0 = Date.now();
 let failed: unknown = null;

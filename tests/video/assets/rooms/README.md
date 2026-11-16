@@ -12,9 +12,10 @@ for the player's room as passthrough would show it. Every frame that uses it car
   (4,877,022 bytes, md5 3df39e24797865650d33278341d77847, fetched 2026-11-16)
 - Licence: CC0 1.0 Universal (public domain dedication), https://polyhaven.com/license and
   https://creativecommons.org/publicdomain/zero/1.0/ . No attribution is required; it is given anyway.
-- Changes (`make-room.sh` here, ffmpeg): the readable magazines in and under the coffee table blurred (feathered), the
-  tone map's yellow pulled back toward warm white, a little contrast, Lanczos to 7168x3584, JPEG 4:4:4 at `-q:v 4`
-  (2.9 MB).
+- Changes (`make-room.sh` here: `clean-table.py` with OpenCV, then ffmpeg): the coffee table cleared, the white
+  sculpture on its glass top, the magazines under the glass and the papers on its lower shelf inpainted away from the
+  oak and rug around them, so the table top behind the board is plain; the tone map's yellow pulled back toward warm
+  white, a little contrast; Lanczos to 7168x3584, JPEG 4:4:4 at `-q:v 4` (2.9 MB).
 
 ## Where the table is
 

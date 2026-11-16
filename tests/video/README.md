@@ -48,9 +48,9 @@ narration. `timings` has the render cost; `engine` the computer's replies.
 - **Alpha**: the game's renderer asks for an opaque canvas; the film gives every WebGL context an alpha channel (as an
   XR layer has on a headset), so the room shows through where the game clears.
 - **Hands**: IWER's emulated hands, posed from eased tracks (`lib/hands.ts`); the game sees real pinches. They are
-  drawn by the film from the session's joint poses as a see-through smoky hand with a thin warm rim and faint finger
-  lines, fading out past the wrist, in the spirit of the Quest system hand; a small ring between thumb and index tips
-  closes to a dot as they meet, so each pinch reads.
+  drawn by the film from the session's joint poses as a plain stand-in: skin-toned capsules, one per finger bone and as
+  wide as IWER's joint radii, over a palm, lit from above, nearest bones last, at about three quarters opacity and
+  fading out past the wrist; a small ring between thumb and index tips closes to a dot as they meet.
 - **Browser window** (shot a): before mixed reality the 2D page is photographed every captured frame and drawn as a
   window floating in the room, with a pointer's cursor dot; the game's own "Play on your table" button is clicked.
 - **Game sound** (`deliver.ts sound`): the samples the game starts (`sound` events, with their files) are laid back

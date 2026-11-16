@@ -24,15 +24,15 @@ export default defineShot({
     return { h5: await game.square("h5"), f7: await game.square("f7") };
   },
   firstView: ({ h5, f7 }) => close([(h5[0] + f7[0]) / 2, h5[1], (h5[2] + f7[2]) / 2 + 0.04], 50),
-  async play({ camera, right, game, page, wait, waitFor, until, mark }, { h5, f7 }) {
-    right.place([h5[0] + 0.3, h5[1] + 0.05, h5[2] + 0.3], REACH_R);
-    await wait(400);
-    await right.glide(up(h5, 0.08), 1000, { q: REACH_R });
+  async play({ camera, right, game, page, wait, waitFor, mark }, { h5, f7 }) {
+    right.place([h5[0] + 0.22, h5[1] + 0.06, h5[2] + 0.2], REACH_R);
+    await wait(200);
+    await right.glide(up(h5, 0.08), 700, { q: REACH_R });
     await right.glide(up(h5, 0.03), 420);
     await right.pinch(200);
     mark("pinch", { square: "h5" });
     await wait(200);
-    await right.arc(up(f7, 0.03), 900, 0.035);
+    await right.arc(up(f7, 0.03), 800, 0.035);
     await wait(200);
     await right.open(220);
     mark("release", { square: "f7" });
@@ -44,18 +44,17 @@ export default defineShot({
     mark("result-card");
     // Close on the card (and later its QR code), from the seat.
     const card = (await game.button("rematch")) ?? BOARD_VIEW.at;
-    camera.move(close([card[0] + 0.03, card[1] - 0.01, card[2]], 56), 1600);
-    await wait(2200);
+    camera.move(close([card[0] + 0.03, card[1] - 0.01, card[2]], 56), 1200);
+    await wait(1300);
     const share = (await page.evaluate((ids) => ids.find((id) => (window as any).__xr.buttonWorld(id)) ?? null, SHARE)) as string | null;
     if (share) {
-      await right.poke(share, { q: POKE_R, approachMs: 900 });
+      await right.poke(share, { q: POKE_R, approachMs: 650 });
       mark("share-qr");
       right.moveTo([0.45, 0.4, -0.1], 900);
-      await wait(3000);
+      await wait(1900);
     } else {
       mark("no-share-button-yet");
       await wait(1500);
     }
-    await until(12);
   },
 });
