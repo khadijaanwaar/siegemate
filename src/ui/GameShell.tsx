@@ -530,7 +530,15 @@ export function GameShell() {
   // Dev and test builds only: drive the mixed reality path from Playwright + IWER.
   useEffect(() => {
     if (!(import.meta.env.DEV || import.meta.env.MODE === "test")) return;
+    // Counts hover blips, so a test can tell a button's one blip from a buzz.
+    let hoverBlips = 0;
+    const blip = audio.blip;
+    audio.blip = (kind = "press") => {
+      if (kind === "hover") hoverBlips += 1;
+      blip.call(audio, kind);
+    };
     const hook = {
+      hoverBlips: () => hoverBlips,
       enter: async (config?: Partial<MatchConfig>): Promise<void> => {
         if (controller.getSnapshot().status !== "playing") {
           startMatch({ mode: "ai", difficulty: "easy", playerColor: "w", clockMinutes: null, ...config } as MatchConfig);
@@ -579,6 +587,9 @@ export function GameShell() {
       },
     };
     (window as unknown as { __xr: typeof hook }).__xr = hook;
+    return () => {
+      audio.blip = blip;
+    };
   }, [controller, startMatch]);
 
   const returnToMenu = useCallback(() => {

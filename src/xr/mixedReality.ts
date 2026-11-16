@@ -87,6 +87,8 @@ interface HandSlot {
   /** When its current hold (pinch, or grip) closed, and whether that was within reach of the board. */
   holdSince: number | null;
   holdNear: boolean;
+  /** Its index fingertip last frame (tests and diagnostics). */
+  tip: THREE.Vector3 | null;
 }
 
 interface InputRead {
@@ -168,6 +170,7 @@ export class MixedReality {
         ray: null,
         holdSince: null,
         holdNear: false,
+        tip: null,
       });
     }
     this.ui = new TableUi(controller, {
@@ -267,11 +270,13 @@ export class MixedReality {
   }
 
   /** Tests: where a hand's pinch point is right now (thumb and index midpoint), and whether it is pinching. */
-  debugPinch(handedness: XRHandedness): { x: number; y: number; z: number; pinching: boolean; mode: string } | null {
+  debugPinch(
+    handedness: XRHandedness,
+  ): { x: number; y: number; z: number; pinching: boolean; mode: string; tip: number[] | null } | null {
     const slot = this.hands.get(handedness);
     if (!slot) return null;
     const { x, y, z } = slot.pinch.point;
-    return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode };
+    return { x, y, z, pinching: slot.pinch.pinching, mode: slot.orders.mode, tip: slot.tip?.toArray() ?? null };
   }
 
   /** Tests: one side's controller as the game reads it. */
@@ -538,6 +543,7 @@ export class MixedReality {
         // fingertip passing a panel must neither press it nor swallow the release.
         const busy = slot.orders.mode !== "idle";
         poking = this.ui.poke(source.handedness, index && !busy ? this.fingertip.copy(index) : null);
+        slot.tip = index ? (slot.tip ?? new THREE.Vector3()).copy(index) : null;
         poked ||= poking;
       } else {
         event = slot.trigger.update(buttonPressed(source.gamepad, TRIGGER), ray ? ray.origin : null, now);

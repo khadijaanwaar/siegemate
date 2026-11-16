@@ -16,6 +16,8 @@ const BOARD_HALF_UNITS = 4.92;
 const ONBOARDED_KEY = "mr-chess:onboarded";
 /** Exit waits this long for its second tap. */
 const EXIT_CONFIRM_S = 3;
+/** A button hovered again within this long of its last hover does not blip again. */
+const HOVER_QUIET_S = 0.4;
 
 export interface TableUiActions {
   newGame(config: { difficulty: Difficulty; playerColor: Faction }): void;
@@ -96,7 +98,9 @@ export class TableUi {
   /** Exit was tapped once: a second tap before this time (seconds, performance clock) leaves. */
   private exitArmedUntil = 0;
   /** The button each panel last showed hovered (for the hover blip). */
-  private readonly hovered = new Map<CanvasPanel, string | null>();
+  private readonly hovered = new Map<CanvasPanel, { id: string; at: number }>();
+  /** The panel each hand's fingertip is hovering this frame: a poke outranks any ray on it. */
+  private readonly pokeHover = new Map<XRHandedness, CanvasPanel | null>();
   /** Panels that face the player: their turn relative to the board, set once when they appear. */
   private readonly facing = new Map<CanvasPanel, THREE.Quaternion>();
   private side: Faction = "w";
@@ -218,6 +222,7 @@ export class TableUi {
       }
     }
     const pressed = tracker.update(best ? best.depth : null, best?.id ?? null);
+    this.pokeHover.set(hand, best?.panel ?? null);
     if (best) this.setHover(best.panel, tracker.hovered);
     if (pressed && best) this.press(best.panel, pressed);
     return best !== null && best.depth < 0.04;
@@ -244,7 +249,11 @@ export class TableUi {
 
   /** Hover feedback for a ray (call with null to clear). */
   hoverRay(target: { panel: CanvasPanel; button: PanelButton | null } | null): void {
-    for (const panel of this.interactive()) this.setHover(panel, target && target.panel === panel ? (target.button?.id ?? null) : null);
+    const poked = new Set(this.pokeHover.values());
+    for (const panel of this.interactive()) {
+      if (poked.has(panel)) continue;
+      this.setHover(panel, target && target.panel === panel ? (target.button?.id ?? null) : null);
+    }
   }
 
   pressTarget(target: { panel: CanvasPanel; button: PanelButton | null }): void {
@@ -318,8 +327,14 @@ export class TableUi {
 
   /** Hover on a panel's button, with a soft blip as it moves onto a new one. */
   private setHover(panel: CanvasPanel, id: string | null): void {
-    if (id !== null && id !== (this.hovered.get(panel) ?? null)) audio.blip("hover");
-    this.hovered.set(panel, id);
+    if (id !== null) {
+      // Once per button reached: a hover that flickers off and back for a
+      // frame or two (a fingertip at the edge of the poke volume) stays quiet.
+      const now = performance.now() / 1000;
+      const last = this.hovered.get(panel);
+      if (!last || last.id !== id || now - last.at > HOVER_QUIET_S) audio.blip("hover");
+      this.hovered.set(panel, { id, at: now });
+    }
     panel.setHover(id);
   }
 

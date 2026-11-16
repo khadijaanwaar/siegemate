@@ -189,6 +189,39 @@ try {
   check(soundBack.muted === false && soundBack.music === true, "and back on", JSON.stringify(soundBack));
   await press("menu"); // close
 
+  // ---- a fingertip held just off the slab's Menu button (in the poke volume, not touching)
+  // blips once as it arrives, never every frame.
+  await page.evaluate(() => {
+    const hand = window.__iwer.hands.right;
+    hand.quaternion.set(0, 0, 0, 1);
+    hand.poseId = "point";
+    hand.position.set(3, 1.2, 2);
+  });
+  await page.waitForTimeout(300);
+  const tipOffset = await page.evaluate(() => {
+    const hand = window.__iwer.hands.right.position;
+    const tip = window.__xr.pinch("right").tip;
+    return { x: tip[0] - hand.x, y: tip[1] - hand.y, z: tip[2] - hand.z };
+  });
+  const menuButton = await page.evaluate(() => window.__xr.buttonWorld("menu"));
+  // The slab lies tilted back 0.9 rad on a board facing the player (yaw 0): its face points up and toward them.
+  const hoverAt = { x: menuButton.x, y: menuButton.y + Math.sin(0.9) * 0.05, z: menuButton.z + Math.cos(0.9) * 0.05 };
+  const blipsBefore = await page.evaluate(() => window.__xr.hoverBlips());
+  await page.evaluate(
+    (p) => window.__iwer.hands.right.position.set(p.x, p.y, p.z),
+    { x: hoverAt.x - tipOffset.x, y: hoverAt.y - tipOffset.y, z: hoverAt.z - tipOffset.z },
+  );
+  await page.waitForTimeout(600);
+  const hoverBlips = (await page.evaluate(() => window.__xr.hoverBlips())) - blipsBefore;
+  const stillClosed = !(await page.evaluate(() => window.__xr.ui())).panels.includes("menu");
+  check(hoverBlips <= 1 && stillClosed, "a fingertip hovering over a button blips at most once and presses nothing", `${hoverBlips} blips`);
+  await page.evaluate(() => {
+    const hand = window.__iwer.hands.right;
+    hand.position.set(3, 1.2, 2);
+    hand.poseId = "open";
+  });
+  await page.waitForTimeout(300);
+
   // ---- two hands pinch beside the board, together, and pull apart: the board grows.
   // Pinched high above it they are not a grab (a pinch has to close within 10 cm of the board).
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
