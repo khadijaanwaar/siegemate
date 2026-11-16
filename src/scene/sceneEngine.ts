@@ -914,6 +914,9 @@ function strideEasing(ramp: number): Easing {
   };
 }
 
+/** Fired on `window` once the armies are loaded and the board stands (main.tsx waits for it). */
+export const GAME_READY_EVENT = "siegemate:ready";
+
 /**
  * Owns every three.js object. The chess core drives it through events and the
  * animator hook; React only calls the small imperative API at the bottom.
@@ -1583,6 +1586,7 @@ export class SceneEngine {
     if (this.disposed) return;
     this.rebuildPieces();
     this.callbacks.onReady();
+    window.dispatchEvent(new Event(GAME_READY_EVENT));
     // The magazine, fetched behind the game: one sculpt per round in the army's
     // barrels, a couple of thousand triangles each, and none of them needed until
     // somebody pulls a trigger. Until a sculpt lands the round is turned

@@ -5,8 +5,12 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import { whenIdle } from "./app/updateGate";
 import { BUILD_ID } from "./brand";
+import { GAME_READY_EVENT } from "./scene/sceneEngine";
 import "./index.css";
 import "./ui/fonts.css";
+
+console.info(`[siegemate] build ${BUILD_ID}`);
+(window as unknown as { __siegemateBuild: string }).__siegemateBuild = BUILD_ID;
 
 /**
  * Offline cache and updates. A newer version found on the server is applied
@@ -14,18 +18,40 @@ import "./ui/fonts.css";
  * which case it waits for the match to end. The server is asked for a newer
  * version on every launch and hourly while the game stays open.
  */
-console.info(`[siegemate] build ${BUILD_ID}`);
-(window as unknown as { __siegemateBuild: string }).__siegemateBuild = BUILD_ID;
+function registerOffline(): void {
+  const updateServiceWorker = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      whenIdle(() => void updateServiceWorker(true));
+    },
+    onRegisteredSW(_url, registration) {
+      if (registration) setInterval(() => void registration.update(), 60 * 60 * 1000);
+    },
+  });
+}
 
-const updateServiceWorker = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    whenIdle(() => void updateServiceWorker(true));
-  },
-  onRegisteredSW(_url, registration) {
-    if (registration) setInterval(() => void registration.update(), 60 * 60 * 1000);
-  },
-});
+/**
+ * The first visit has no cache: the worker's precache (the whole game) would
+ * race the game's own first download, and on a headset that is the wait before
+ * "Play on your table" appears. So it is registered once the board stands and
+ * the main thread is idle, or after 30 s whatever happens. A returning visit
+ * registers at once: the browser is already checking for a newer worker, and
+ * registering late could miss that one installing.
+ */
+function afterGameReady(run: () => void): void {
+  let started = false;
+  const start = (): void => {
+    if (started) return;
+    started = true;
+    if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
+    else setTimeout(run, 500);
+  };
+  window.addEventListener(GAME_READY_EVENT, start, { once: true });
+  setTimeout(start, 30000);
+}
+
+if ("serviceWorker" in navigator && navigator.serviceWorker.controller) registerOffline();
+else afterGameReady(registerOffline);
 
 /**
  * Dev and test builds only: `?emulate` installs Meta's WebXR emulator (IWER)
