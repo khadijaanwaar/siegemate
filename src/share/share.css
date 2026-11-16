@@ -1,0 +1,176 @@
+/* Sharing and replay: the share sheet and the replay bar. Same tokens as src/ui/medieval.css. */
+
+.mc-dialog.mc-share {
+  position: relative;
+  max-width: 34rem;
+  text-align: left;
+}
+
+.mc-share .mc-share-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+}
+
+.mc-share-title {
+  font-family: var(--mc-font-mark);
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--mc-text);
+  padding-right: 3rem;
+}
+
+.mc-share-sub {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+  color: var(--mc-text-2);
+}
+
+.mc-share-card {
+  margin-top: 1rem;
+  aspect-ratio: 1200 / 630;
+  overflow: hidden;
+  border: 1px solid var(--mc-line);
+  border-radius: 10px;
+  background: var(--mc-surface);
+}
+
+.mc-share-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mc-share-card-wait {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--mc-surface), var(--mc-surface-hover), var(--mc-surface));
+}
+
+.mc-share-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  margin-top: 1rem;
+}
+
+.mc-share-actions > :first-child {
+  grid-column: 1 / -1;
+}
+
+.mc-share-link {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--mc-font-ui);
+  font-size: 0.8125rem;
+  color: var(--mc-text-2);
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-line);
+  border-radius: 8px;
+  text-overflow: ellipsis;
+}
+
+.mc-share-status {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--mc-gold);
+}
+
+/* ------------------------------------------------------------ replay bar */
+
+.mc-replay {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mc-edge, 0.75rem) + var(--mc-safe-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(52rem, calc(100% - 1.5rem));
+  padding: 0.75rem 1rem 0.875rem;
+}
+
+.mc-replay-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mc-replay-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--mc-text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mc-replay-ply {
+  flex: none;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--mc-text-2);
+}
+
+.mc-replay-result {
+  margin-top: 0.25rem;
+  font-size: 0.9375rem;
+  color: var(--mc-gold);
+}
+
+.mc-replay-track {
+  height: 4px;
+  margin-top: 0.625rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--mc-surface);
+}
+
+.mc-replay-fill {
+  height: 100%;
+  background: var(--mc-gold);
+  transition: width 200ms ease;
+}
+
+.mc-replay-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem 1rem;
+  margin-top: 0.625rem;
+}
+
+.mc-replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mc-replay-controls .mc-btn {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.mc-replay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* A phone: the transport centred over the ways out. */
+@media (max-width: 640px) {
+  .mc-replay-row {
+    justify-content: center;
+  }
+
+  .mc-replay-actions {
+    justify-content: center;
+  }
+}

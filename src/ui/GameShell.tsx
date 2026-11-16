@@ -23,6 +23,11 @@ import { APP_NAME } from "../brand";
 import { setMatchInProgress } from "../app/updateGate";
 import { clearSavedGame, saveGame, type SavedGame } from "../core/persist";
 import { loadStats, recordGame, saveStats, type PlayerStats } from "../core/stats";
+import { ReplayBar } from "../share/ReplayBar";
+import { ShareSheet } from "../share/ShareSheet";
+import { replayFromSnapshot } from "../share/story";
+import { useReplay } from "../share/useReplay";
+import { useShareOffer } from "../share/useShareOffer";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { useHasKeyboard } from "./inputMode";
@@ -222,6 +227,8 @@ export function GameShell() {
 
   const controller = useMemo(() => new GameController(), []);
   const snapshot = useGameSnapshot(controller);
+  /** A shared game is on show (see `useReplay`): not the viewer's match. */
+  const replayActive = useRef(false);
 
   // The player's record against the computer, and the match in progress, both
   // kept on this device so they survive a reload, a crash or no network at all.
@@ -229,12 +236,15 @@ export function GameShell() {
   useEffect(() => {
     const storage = window.localStorage;
     const offMove = controller.on("move", () => {
+      // A shared game on show is not the viewer's match: nothing saved, nothing recorded.
+      if (replayActive.current) return;
       const current = controller.getSnapshot();
       if (current.status === "playing" && (current.mode === "ai" || current.mode === "hotseat")) {
         saveGame(storage, controller.exportSave());
       }
     });
     const offOver = controller.on("gameover", (result) => {
+      if (replayActive.current) return;
       clearSavedGame(storage);
       const current = controller.getSnapshot();
       if (current.mode !== "ai") return;
@@ -303,6 +313,28 @@ export function GameShell() {
   const [cinema, setCinema] = useState(false);
   /** How the camera behaves during a showcase duel: held, orbiting or following. */
   const [showcaseCamera, setShowcaseCamera] = useState<ShowcaseCamera>("follow");
+
+  // A shared `#r=` link plays its game back on the board (src/share).
+  const replay = useReplay({
+    controller,
+    engine: () => engineRef.current,
+    ready: phase !== "loading",
+    introPlaying,
+    onEnter: (game) => {
+      stopAttract();
+      setShowSettings(false);
+      setCinema(false);
+      setSettings((current) => (current.arena === game.arena ? current : { ...current, arena: game.arena }));
+      setPhase("playing");
+    },
+    onLeave: () => returnToMenu(),
+    notify: (message) => {
+      setNotice(message);
+      setTimeout(() => setNotice(null), 6000);
+    },
+    activeRef: replayActive,
+  });
+  const replaying = replay.game !== null;
 
   // ------------------------------------------------------------ boot the scene
   useEffect(() => {
@@ -422,11 +454,12 @@ export function GameShell() {
     // The map brings its own music; the mixer crossfades to it, and remembers
     // the choice if the player has not made a sound yet.
     audio.setArena(settings.arena);
-    if (phase !== "playing") {
+    // A replay musters the shared armies itself and must not lose them to the viewer's.
+    if (phase !== "playing" && !replayActive.current) {
       engine.setArmySkins(settings.skins);
     }
     engine.setCaptureCinematics(settings.captureCinematics);
-    engine.setRotateBoard(settings.rotateBoard);
+    engine.setRotateBoard(settings.rotateBoard && !replaying);
     controller.setPremovesEnabled(settings.premoves);
     controller.setPremoveDepth(settings.premoveDepth);
     controller.setThinkFloorMs(settings.thinkFloorMs);
@@ -439,7 +472,7 @@ export function GameShell() {
     savePremoves(settings.premoves);
     savePremoveDepth(settings.premoveDepth);
     saveThinkFloor(settings.thinkFloorMs);
-  }, [settings, phase, controller]);
+  }, [settings, phase, controller, replaying]);
 
   // Only when the toggle itself changes: the effect above runs on every
   // setting (the headset's battleground button included) and must not undo a
@@ -766,6 +799,14 @@ export function GameShell() {
     engineRef.current?.skipIntro();
   }, []);
 
+  // ------------------------------------------------------------------ sharing
+  const shareGame = useMemo(() => {
+    const engine = engineRef.current;
+    if (phase !== "playing" || snapshot.status !== "over" || replaying || !engine) return null;
+    return replayFromSnapshot(snapshot, engine.getArmySkins(), settings.arena);
+  }, [phase, snapshot, settings.arena, replaying]);
+  const share = useShareOffer(shareGame, () => engineRef.current?.xrRenderer.xr ?? null, phase !== "loading");
+
   // ------------------------------------------------------- showcase verdict
   const showcaseFinished = phase === "playing" && snapshot.mode === "demo" && snapshot.status === "over";
   const [verdictReady, setVerdictReady] = useState(false);
@@ -827,7 +868,7 @@ export function GameShell() {
           />
         ) : null}
 
-        {phase === "playing" && !cinema ? (
+        {phase === "playing" && !cinema && !replaying ? (
           <Hud
             snapshot={snapshot}
             muted={settings.muted}
@@ -910,6 +951,7 @@ export function GameShell() {
             (cinema) keeps it off screen. */}
         {phase === "playing" &&
         !cinema &&
+        !replaying &&
         snapshot.status === "over" &&
         snapshot.result &&
         (snapshot.mode !== "demo" || verdictReady) ? (
@@ -934,8 +976,34 @@ export function GameShell() {
             }
             onRematch={handleRematch}
             onMenu={returnToMenu}
+            onShare={
+              shareGame
+                ? () => {
+                    // A looping showcase would start the next duel under the open sheet.
+                    if (snapshot.demo?.autoRematch) controller.setDemoAutoRematch(false);
+                    share.open(shareGame);
+                  }
+                : undefined
+            }
           />
         ) : null}
+
+        {phase === "playing" && !cinema && replay.game && replay.state && replay.controls ? (
+          <ReplayBar
+            game={replay.game}
+            state={replay.state}
+            onToggle={replay.controls.toggle}
+            onStepBack={replay.controls.stepBack}
+            onStepForward={replay.controls.stepForward}
+            onStart={replay.controls.toStart}
+            onEnd={replay.controls.toEnd}
+            onContinue={replay.controls.continueHere ?? undefined}
+            onShare={() => replay.game && share.open(replay.game)}
+            onOwnGame={replay.controls.leave}
+          />
+        ) : null}
+
+        {share.sheet ? <ShareSheet game={share.sheet} onClose={share.close} /> : null}
 
         {notice ? (
           <div className="mc-fade mc-slate pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 text-xs text-[#e4d3ac]">

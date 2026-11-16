@@ -4,6 +4,7 @@ import { audio } from "../../audio/audioManager";
 import type { GameController } from "../../core/gameController";
 import { loadStats, winRate } from "../../core/stats";
 import type { Difficulty, Faction, GameSnapshot, PieceKind } from "../../core/types";
+import { drawShareCard, SHARE_CARD } from "../../share/headsetShare";
 import type { TableRig } from "../tableRig";
 import { CanvasPanel, type PanelButton } from "./canvasPanel";
 import { Coach, coachCopy, type CoachInput, type CoachStep, type Pointer } from "./coach";
@@ -38,7 +39,7 @@ export interface TableUiActions {
   nudgeHeight(direction: 1 | -1): void;
 }
 
-type PanelName = "coach" | "slab" | "menu" | "result" | "perf" | "promote";
+type PanelName = "coach" | "slab" | "menu" | "result" | "share" | "perf" | "promote";
 
 /** `?debug` shows a frame-rate card beside the board (for testing on a device). */
 const SHOW_PERF = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
@@ -121,7 +122,8 @@ export class TableUi {
       coach: new CanvasPanel(0.42, 0.08),
       slab: new CanvasPanel(SLAB_PANEL.width, SLAB_PANEL.height),
       menu: new CanvasPanel(MENU_PANEL.width, MENU_PANEL.height),
-      result: new CanvasPanel(0.28, 0.13),
+      result: new CanvasPanel(0.28, 0.17),
+      share: new CanvasPanel(SHARE_CARD.width, SHARE_CARD.height),
       perf: new CanvasPanel(0.17, 0.05),
       promote: new CanvasPanel(PROMOTION_PANEL.width, PROMOTION_PANEL.height),
     };
@@ -142,6 +144,7 @@ export class TableUi {
         this.resultShown = false;
         this.pendingResult = false;
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
       }),
     );
   }
@@ -178,6 +181,7 @@ export class TableUi {
     if (!playing) {
       this.panels.menu.visible = false;
       this.panels.result.visible = false;
+      this.panels.share.visible = false;
     }
     this.layout(rig, input.mr);
     for (const panel of Object.values(this.panels)) panel.update(now);
@@ -382,6 +386,7 @@ export class TableUi {
         this.menuOpen = false;
         this.showMenu();
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
         this.playerMoved = false;
         this.actions.newGame({ difficulty: this.strength, playerColor: this.side });
         break;
@@ -419,6 +424,13 @@ export class TableUi {
           this.exitArmedUntil = performance.now() / 1000 + EXIT_CONFIRM_S;
           this.redrawExit();
         }
+        break;
+      case "share":
+        this.showShare();
+        break;
+      case "share-back":
+        this.panels.share.visible = false;
+        this.panels.result.visible = true;
         break;
       default:
         break;
@@ -540,10 +552,21 @@ export class TableUi {
       buttons: [
         { id: "rematch", rect: [0.016, 0.08, 0.12, 0.036], label: "Rematch", tone: "primary" },
         { id: "exit", rect: [0.148, 0.08, 0.12, 0.036], label: this.exitArmedUntil > 0 ? "Really exit?" : "Exit" },
+        { id: "share", rect: [0.016, 0.128, 0.252, 0.032], label: "Share this battle" },
       ],
     });
     panel.visible = true;
     this.resultShown = true;
+  }
+
+  /** The replay link as a QR code a phone can scan, in place of the result card. */
+  private showShare(): void {
+    const panel = this.panels.share;
+    const content = drawShareCard();
+    if (!content) return;
+    this.setPanel(panel, content);
+    this.panels.result.visible = false;
+    panel.visible = true;
   }
 
   /**
@@ -591,6 +614,7 @@ export class TableUi {
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
     // On the player's edge of the board, low: in poke reach, clear of the far rank where the pawn stands.
     place(this.panels.promote, new THREE.Vector3(0, 0.07, half + 0.05), "player");
+    place(this.panels.share, new THREE.Vector3(0, 0.2, 0), "player");
   }
 }
 
