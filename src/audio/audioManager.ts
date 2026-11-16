@@ -354,6 +354,9 @@ export class AudioManager {
   private master: GainNode | null = null;
   /** Music/ambience sub-bus, ducked underneath death cries. */
   private bedBus: GainNode | null = null;
+  /** Music on/off, after the ducking bus: {@link setMusicMuted}. */
+  private musicGate: GainNode | null = null;
+  private musicMuted = false;
   private buffers = new Map<string, AudioBuffer>();
   /** Decoded death cries keyed by their URL, streamed on demand. */
   private voices = new Map<string, AudioBuffer>();
@@ -401,7 +404,10 @@ export class AudioManager {
       this.master.connect(this.ctx.destination);
       this.bedBus = this.ctx.createGain();
       this.bedBus.gain.value = 1;
-      this.bedBus.connect(this.master);
+      this.musicGate = this.ctx.createGain();
+      this.musicGate.gain.value = this.musicMuted ? 0 : 1;
+      this.musicGate.connect(this.master);
+      this.bedBus.connect(this.musicGate);
       // Under the ducking bus like every other bed, so a death cry still pulls
       // the music down whichever map it belongs to.
       this.scoreBus = this.ctx.createGain();
@@ -1885,6 +1891,20 @@ export class AudioManager {
     osc.stop(now + 0.3);
   }
 
+  get isMusicMuted(): boolean {
+    return this.musicMuted;
+  }
+
+  /** Music (score and beds) off or on, leaving the game's sounds alone. Safe before `unlock()`. */
+  setMusicMuted(muted: boolean): void {
+    this.musicMuted = muted;
+    if (!this.musicGate || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.musicGate.gain.cancelScheduledValues(now);
+    this.musicGate.gain.setValueAtTime(this.musicGate.gain.value, now);
+    this.musicGate.gain.linearRampToValueAtTime(muted ? 0 : 1, now + 0.35);
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (!this.master || !this.ctx) return;
@@ -1909,6 +1929,7 @@ export class AudioManager {
     this.shotLoads.clear();
     this.activeVoices = 0;
     this.bedBus = null;
+    this.musicGate = null;
     void this.ctx?.close();
     this.ctx = null;
   }
