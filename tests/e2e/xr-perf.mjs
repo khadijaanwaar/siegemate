@@ -78,6 +78,10 @@ try {
     await settle();
   }
   const captures = [];
+  // Programs ever seen, by full cache key: a new id with a known key was
+  // released (its last material disposed) and compiled again.
+  const allKeys = () => page.evaluate(() => window.__scene.programs().map((program) => program.key));
+  const seenKeys = new Set(await allKeys());
   for (const [from, to] of [["e4", "d5"], ["d8", "d5"]]) {
     const before = await programIds();
     const played = await page.evaluate(([a, b]) => window.__xr.move(a, b), [from, to]);
@@ -85,7 +89,11 @@ try {
     await settle();
     const beat = await page.evaluate(() => window.__scene.lastBeat());
     const compiled = fresh(await programIds(), before);
-    captures.push({ move: `${from}x${to}`, played, ...beat, programs: compiled.length });
+    const keys = await page.evaluate((wanted) => window.__scene.programs().filter((program) => wanted.includes(program.id)).map((program) => program.key), compiled);
+    const recompiled = keys.filter((key) => seenKeys.has(key)).length;
+    for (const key of await allKeys()) seenKeys.add(key);
+    for (const key of keys) seenKeys.add(key);
+    captures.push({ move: `${from}x${to}`, played, ...beat, programs: compiled.length, recompiled });
     if (process.argv.includes("--keys")) console.log(`     ${from}x${to} compiled: ${JSON.stringify(await describe(compiled))}`);
   }
   report.captures = captures;
