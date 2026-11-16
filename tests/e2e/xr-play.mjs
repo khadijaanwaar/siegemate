@@ -205,7 +205,7 @@ try {
   });
   const menuButton = await page.evaluate(() => window.__xr.buttonWorld("menu"));
   // The slab lies tilted back 0.9 rad on a board facing the player (yaw 0): its face points up and toward them.
-  const hoverAt = { x: menuButton.x, y: menuButton.y + Math.sin(0.9) * 0.05, z: menuButton.z + Math.cos(0.9) * 0.05 };
+  const hoverAt = { x: menuButton.x, y: menuButton.y + Math.sin(0.9) * 0.025, z: menuButton.z + Math.cos(0.9) * 0.025 };
   const blipsBefore = await page.evaluate(() => window.__xr.hoverBlips());
   await page.evaluate(
     (p) => window.__iwer.hands.right.position.set(p.x, p.y, p.z),
@@ -214,7 +214,7 @@ try {
   await page.waitForTimeout(600);
   const hoverBlips = (await page.evaluate(() => window.__xr.hoverBlips())) - blipsBefore;
   const stillClosed = !(await page.evaluate(() => window.__xr.ui())).panels.includes("menu");
-  check(hoverBlips <= 1 && stillClosed, "a fingertip hovering over a button blips at most once and presses nothing", `${hoverBlips} blips`);
+  check(hoverBlips === 1 && stillClosed, "a fingertip hovering 2.5 cm off a button blips once, not every frame, and presses nothing", `${hoverBlips} blips`);
   await page.evaluate(() => {
     const hand = window.__iwer.hands.right;
     hand.position.set(3, 1.2, 2);
