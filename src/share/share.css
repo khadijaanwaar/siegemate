@@ -1,12 +1,12 @@
 /* Sharing and replay: the share sheet and the replay bar. Same tokens as src/ui/medieval.css. */
 
-.mc-share {
+.mc-dialog.mc-share {
   position: relative;
   max-width: 34rem;
   text-align: left;
 }
 
-.mc-share-close {
+.mc-share .mc-share-close {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
