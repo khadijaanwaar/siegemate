@@ -1793,7 +1793,9 @@ export class SceneEngine {
       // Every third frame, adopt the programs of materials a fight just made,
       // so the next fight finds them compiled.
       this.keeperTick = (this.keeperTick + 1) % 3;
-      if (this.keeperTick === 0 && this.xrTargetBound()) this.keeper.learn(this.world);
+      // Only once the board is shown: while it is hidden its lights are left
+      // out of a compile, so a stand-in would come out with the wrong program.
+      if (this.keeperTick === 0 && this.table.root.visible && this.xrTargetBound()) this.keeper.learn(this.world);
       return;
     }
 
