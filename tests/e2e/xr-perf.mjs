@@ -2,7 +2,8 @@
 //   - shader programs compiled when the board appears on the table (should be
 //     none: they are warmed behind the placement reticle),
 //   - how long a capture fight holds the game on the table,
-//   - programs compiled by a capture and by a battleground switch mid-session.
+//   - programs compiled by each capture of a full fight (should be none) and
+//     by a battleground switch mid-session.
 // Prints one JSON line at the end for the plan's numbers.
 //
 //   node tests/e2e/xr-perf.mjs [--headed] [--keys]
@@ -71,34 +72,68 @@ try {
   check(placing === "placing", "the board was still being placed when programs were counted", placing);
   check(report.programs.compiledWhenTheBoardAppears === 0, "no shader compiles when the board appears", JSON.stringify(report.programs));
 
-  // ---- a capture: 1. e4 d5 2. exd5, then the queen takes back.
-  for (const [from, to] of [["e2", "e4"], ["d7", "d5"]]) {
-    await page.evaluate(([a, b]) => window.__xr.move(a, b), [from, to]);
-    await page.waitForTimeout(100);
-    await settle();
-  }
+  // ---- a fight with every rank on both sides (and three checks):
+  //   1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. Nb5 c6 5. Nxa7 Rxa7 6. Bc4 b5
+  //   7. Bxf7+ Kxf7 8. Qh5+ g6 9. Qxg6+ hxg6
+  // Program ids only grow, so the highest id seen (polled through each beat,
+  // since an effect can compile a program and release it before the beat
+  // ends) counts every compile, released or not.
+  const SEQUENCE = ["e2e4", "d7d5", "e4d5", "d8d5", "b1c3", "d5d8", "c3b5", "c7c6", "b5a7", "a8a7", "f1c4", "b7b5", "c4f7", "e8f7", "d1h5", "g7g6", "h5g6", "h7g6"];
+  const topId = async () => Math.max(-1, ...(await programIds()));
   const captures = [];
-  // Programs ever seen, by full cache key: a new id with a known key was
-  // released (its last material disposed) and compiled again.
-  const allKeys = () => page.evaluate(() => window.__scene.programs().map((program) => program.key));
-  const seenKeys = new Set(await allKeys());
-  for (const [from, to] of [["e4", "d5"], ["d8", "d5"]]) {
-    const before = await programIds();
+  let quietCompiles = 0;
+  for (const move of SEQUENCE) {
+    const [from, to] = [move.slice(0, 2), move.slice(2, 4)];
+    const before = await topId();
+    const owners = {};
     const played = await page.evaluate(([a, b]) => window.__xr.move(a, b), [from, to]);
-    await page.waitForTimeout(100);
-    await settle();
+    let top = before;
+    await page.waitForTimeout(60);
+    for (;;) {
+      const sample = await page.evaluate(() => ({ moving: window.__scene.moving(), owners: window.__scene.programOwners() }));
+      for (const [id, owner] of Object.entries(sample.owners)) {
+        if (Number(id) > before) {
+          owners[id] = owner;
+          top = Math.max(top, Number(id));
+        }
+      }
+      if (sample.moving === 0) break;
+      await page.waitForTimeout(100);
+    }
+    top = Math.max(top, await topId());
     const beat = await page.evaluate(() => window.__scene.lastBeat());
-    const compiled = fresh(await programIds(), before);
-    const keys = await page.evaluate((wanted) => window.__scene.programs().filter((program) => wanted.includes(program.id)).map((program) => program.key), compiled);
-    const recompiled = keys.filter((key) => seenKeys.has(key)).length;
-    for (const key of await allKeys()) seenKeys.add(key);
-    for (const key of keys) seenKeys.add(key);
-    captures.push({ move: `${from}x${to}`, played, ...beat, programs: compiled.length, recompiled });
-    if (process.argv.includes("--keys")) console.log(`     ${from}x${to} compiled: ${JSON.stringify(await describe(compiled))}`);
+    const compiled = top - before;
+    if (!beat?.capture) {
+      quietCompiles += compiled;
+      continue;
+    }
+    captures.push({ move: `${from}x${to}`, played, wallMs: Math.round(beat.wallMs), engineS: Number(beat.engineS.toFixed(2)), programs: compiled });
+    if (process.argv.includes("--keys") && compiled > 0) {
+      console.log(`     ${from}x${to} compiled ${compiled}: ${JSON.stringify(Object.values(owners))}`);
+      // What changed: each new program's key against the closest older one.
+      const programs = await page.evaluate(() => window.__scene.programs());
+      const older = programs.filter((program) => program.id <= before).map((program) => program.key.split(","));
+      for (const program of programs.filter((entry) => entry.id > before)) {
+        const fields = program.key.split(",");
+        let best = [];
+        for (const key of older) {
+          if (key[0] !== fields[0] || key.length !== fields.length) continue;
+          const diff = fields.flatMap((field, i) => (field === key[i] ? [] : [`#${i} ${key[i].slice(0, 24)}→${field.slice(0, 24)}`]));
+          if (best.length === 0 || diff.length < best.length) best = diff;
+        }
+        console.log(`       ${fields[0].slice(0, 24)}: ${best.length ? best.join("; ") : "no older program of this kind"}`);
+      }
+    }
   }
   report.captures = captures;
+  report.compilesInQuietMoves = quietCompiles;
+  report.keptPrograms = await page.evaluate(() => window.__scene.keptPrograms());
+  if (process.argv.includes("--keys")) {
+    for (const keeper of await page.evaluate(() => window.__scene.keepers())) console.log(`     keeper: ${keeper}`);
+  }
+  check(captures.length === 8, "eight captures were played on the table", captures.map((capture) => capture.move).join(" "));
   for (const capture of captures) {
-    check(capture.played && capture.capture, `${capture.move} is a capture on the table`, JSON.stringify(capture));
+    check(capture.programs === 0, `${capture.move} compiles no shaders`, JSON.stringify(capture));
   }
 
   // ---- a battleground switch mid-session.
