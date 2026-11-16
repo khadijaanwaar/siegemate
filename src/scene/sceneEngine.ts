@@ -1345,7 +1345,10 @@ export class SceneEngine {
   }
 
   /**
-   * Compiles every program the table draws before the board is shown.
+   * Compiles the programs of everything already in the scene (board, figures,
+   * panels, room) for the table before the board is shown. Effects built
+   * during a fight (bursts, sparks, debris) are not in the scene yet and still
+   * compile when they first appear.
    *
    * Nothing a table frame draws matches a 2D program: the hall's lights and fog
    * are gone, shadows are off, tone mapping moves into the shader (no
