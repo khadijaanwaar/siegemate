@@ -279,7 +279,8 @@ describe("MixedReality sides", () => {
     const { mixed, game } = await playing({}, { playerColor: "b" });
     expect(mixed.debugSizes().flipped).toBe(true);
     game.state.playerColor = "w";
-    game.emit("reset");
+    // The controller publishes the new side after its `reset` event, on `state`.
+    game.emit("state");
     expect(mixed.debugSizes().flipped).toBe(false);
   });
 

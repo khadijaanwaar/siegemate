@@ -244,8 +244,9 @@ export class MixedReality {
     this.unsubscribe.push(
       this.table.onVisibility((visibility) => this.setFocused(visibility === "visible")),
       this.table.onEnd((requestedByApp) => this.teardown(requestedByApp)),
-      // A new game from the headset menu may change sides.
-      this.controller.on("reset", () => this.faceThePlayersArmy()),
+      // A new game from the headset menu may change sides. (The snapshot is
+      // published after the `reset` event, so the side is read on `state`.)
+      this.controller.on("state", () => this.faceThePlayersArmy()),
     );
     // The Meta button recentres the world: keep the board on its spot of the table.
     const reference = this.engine.xrRenderer.xr.getReferenceSpace();
@@ -815,7 +816,8 @@ export class MixedReality {
    */
   private faceThePlayersArmy(): void {
     const snapshot = this.controller.getSnapshot();
-    this.rig.setFlipped(snapshot.mode === "ai" && snapshot.playerColor === "b");
+    const flipped = snapshot.mode === "ai" && snapshot.playerColor === "b";
+    if (flipped !== this.rig.flipped) this.rig.setFlipped(flipped);
   }
 
   /**
