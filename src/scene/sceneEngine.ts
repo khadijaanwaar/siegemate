@@ -6,7 +6,7 @@ import type { GameController } from "../core/gameController";
 import { PIECE_LABEL, type Faction, type GameSnapshot, type MoveEvent, type PieceKind, type SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
 import type { ArenaTheme } from "./arena";
-import { ARENA_LOOKS, DEFAULT_ARENA } from "./arena";
+import { ARENA_LOOKS, ARENA_ORDER, DEFAULT_ARENA } from "./arena";
 import { Battlefield } from "./battlefield";
 import { Dressing } from "./dressing";
 import { Landmarks } from "./landmarks";
@@ -150,6 +150,11 @@ const DEFAULT_FOV = 46;
 const TABLE_CREST_SCALE = 0.65;
 /** Light on a real table: sky and key intensities, and the exposure lift over the hall's. */
 const TABLE_LIGHT = { sky: 2.4, key: 2.2, exposure: 1.15 } as const;
+
+/** The battleground after `theme` in the picker's order (the headset menu steps through them so). */
+function nextArenaOf(theme: ArenaTheme): ArenaTheme {
+  return ARENA_ORDER[(ARENA_ORDER.indexOf(theme) + 1) % ARENA_ORDER.length];
+}
 /** How far above the stone (game units, ~a figure's height) a held order still aims at a square. */
 const ORDER_REACH_UNITS = 3.2;
 /** On a table every idle figure updates every other frame (72 Hz -> 36 Hz breathing). */
@@ -1019,6 +1024,8 @@ export class SceneEngine {
    * (see {@link warmTablePrograms}).
    */
   private tableWarmth: "cold" | "compiling" | "warm" = "cold";
+  /** Stops listening to the headset session's visibility (the mixer follows it). */
+  private unwatchSession: (() => void) | null = null;
   private running = false;
   private disposed = false;
   private frameErrors = 0;
@@ -1315,6 +1322,18 @@ export class SceneEngine {
     this.idle.setBuckets(TABLE_IDLE_EVERY);
     this.refreshMaterials();
     this.tableWarmth = "cold";
+
+    // The room is the player's own: no hall ambience, the score steps back,
+    // and the next battleground's score is decoded before the menu asks for it.
+    audio.setTableMode(true);
+    audio.prefetchScore(nextArenaOf(this.arena));
+    const session = this.renderer.xr.getSession();
+    if (session) {
+      const follow = (): void => audio.setSessionVisibility(session.visibilityState);
+      session.addEventListener("visibilitychange", follow);
+      follow();
+      this.unwatchSession = () => session.removeEventListener("visibilitychange", follow);
+    }
   }
 
   /**
@@ -1369,6 +1388,10 @@ export class SceneEngine {
     if (!rig || !restore) return;
     this.table = null;
     this.tableRestore = null;
+    this.unwatchSession?.();
+    this.unwatchSession = null;
+    audio.setSessionVisibility(null);
+    audio.setTableMode(false);
     this.clearSelection();
     this.scene.add(this.world);
     rig.root.removeFromParent();

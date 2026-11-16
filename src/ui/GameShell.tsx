@@ -274,7 +274,7 @@ export function GameShell() {
     premoveDepth: initialPremoveDepth,
     thinkFloorMs: initialThinkFloor,
     rankBadges: true,
-    muted: false,
+    muted: audio.isMuted,
     safeMode: initialRender.safeMode,
     brightness: initialRender.brightness,
   }));
@@ -425,7 +425,6 @@ export function GameShell() {
     engine.setRankBadges(settings.rankBadges);
     engine.setSafeMode(settings.safeMode);
     engine.setBrightness(settings.brightness);
-    audio.setMuted(settings.muted);
     saveRenderPrefs({ safeMode: settings.safeMode, brightness: settings.brightness });
     saveArmyPrefs(settings.skins);
     saveSeatSwing(settings.rotateBoard);
@@ -433,6 +432,13 @@ export function GameShell() {
     savePremoveDepth(settings.premoveDepth);
     saveThinkFloor(settings.thinkFloorMs);
   }, [settings, phase, controller]);
+
+  // Only when the toggle itself changes: the effect above runs on every
+  // setting (the headset's battleground button included) and must not undo a
+  // mute set from the headset. The mixer remembers the choice itself.
+  useEffect(() => {
+    audio.setMuted(settings.muted);
+  }, [settings.muted]);
 
   // ------------------------------------------------------------- attract mode
   const stopAttract = useCallback(() => {

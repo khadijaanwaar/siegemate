@@ -288,6 +288,53 @@ const BED_VOLUME: Record<BedName, number> = {
 const SCORE_VOLUME = 0.34;
 
 /**
+ * On a real table the score comes down about 4 dB: the player hears their own
+ * room, and the march and the blows on the board carry the scene.
+ */
+const TABLE_SCORE_TRIM = 0.63;
+
+/** How quickly the mix moves between the hall and the table. */
+const TABLE_FADE = 1.2;
+
+/** The player's sound choices, kept on this device. */
+const SOUND_PREFS_KEY = "mr-chess:sound";
+
+export interface SoundPrefs {
+  /** Everything silent. */
+  muted: boolean;
+  /** The score and the tension stem; battle sounds stay. */
+  music: boolean;
+}
+
+export function loadSoundPrefs(storage: Pick<Storage, "getItem"> | null = safeStorage()): SoundPrefs {
+  const fallback: SoundPrefs = { muted: false, music: true };
+  try {
+    const raw = storage?.getItem(SOUND_PREFS_KEY);
+    if (!raw) return fallback;
+    const stored = JSON.parse(raw) as Partial<SoundPrefs>;
+    return { muted: stored.muted === true, music: stored.music !== false };
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveSoundPrefs(prefs: SoundPrefs, storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
+  try {
+    storage?.setItem(SOUND_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Private browsing: the choice just will not survive the reload.
+  }
+}
+
+function safeStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Loudness every battleground's score is levelled to, in LUFS — the measured
  * loudness of the original dusk track, because that is the one the rest of the
  * mix (knocks, cries, bells, gunfire) was balanced underneath. See
@@ -352,8 +399,12 @@ interface ScoreVoice {
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Catches the peaks when a volley, a cry and the score land together. */
+  private limiter: DynamicsCompressorNode | null = null;
   /** Music/ambience sub-bus, ducked underneath death cries. */
   private bedBus: GainNode | null = null;
+  /** The score and the tension stem, under the bed bus: the "music" switch. */
+  private musicBus: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
   /** Decoded death cries keyed by their URL, streamed on demand. */
   private voices = new Map<string, AudioBuffer>();
@@ -372,7 +423,19 @@ export class AudioManager {
   };
   private activeVoices = 0;
   private beds = new Map<BedName, Bed>();
-  private muted = false;
+  private muted: boolean;
+  private musicEnabled: boolean;
+  /** The game stands on a real table: no hall ambience, a quieter score. */
+  private tableMode = false;
+  /** Last game intensity (0 calm .. 1 check), so a mode change keeps it. */
+  private intensity = 0;
+  /**
+   * Visibility of a live headset session, which alone decides while it runs
+   * (how a headset reports the page's own visibility during a session is not
+   * something to rely on); null when there is none, and the page decides.
+   */
+  private sessionVisibility: XRVisibilityState | null = null;
+  private watchingPage = false;
   private started = false;
   private loading: Promise<void> | null = null;
   /** Score sub-bus. Intensity rides here, so a swap never fights the ducking. */
@@ -385,8 +448,18 @@ export class AudioManager {
   private scoreBuffers = new Map<ArenaTheme, AudioBuffer>();
   private scoreLoads = new Map<ArenaTheme, Promise<void>>();
 
+  constructor() {
+    const prefs = loadSoundPrefs();
+    this.muted = prefs.muted;
+    this.musicEnabled = prefs.music;
+  }
+
   get isMuted(): boolean {
     return this.muted;
+  }
+
+  get isMusicEnabled(): boolean {
+    return this.musicEnabled;
   }
 
   /** Must be called from a user gesture (browser autoplay policy). */
@@ -396,23 +469,35 @@ export class AudioManager {
         window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
       this.ctx = new Ctor();
+      // A limiter in front of the speakers: only the loudest pile-ups reach it.
+      this.limiter = this.ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -4;
+      this.limiter.knee.value = 2;
+      this.limiter.ratio.value = 20;
+      this.limiter.attack.value = 0.003;
+      this.limiter.release.value = 0.25;
+      this.limiter.connect(this.ctx.destination);
       this.master = this.ctx.createGain();
       this.master.gain.value = this.muted ? 0 : 1;
-      this.master.connect(this.ctx.destination);
+      this.master.connect(this.limiter);
       this.bedBus = this.ctx.createGain();
       this.bedBus.gain.value = 1;
       this.bedBus.connect(this.master);
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = this.musicEnabled ? 1 : 0;
+      this.musicBus.connect(this.bedBus);
       // Under the ducking bus like every other bed, so a death cry still pulls
       // the music down whichever map it belongs to.
       this.scoreBus = this.ctx.createGain();
-      this.scoreBus.gain.value = SCORE_VOLUME;
-      this.scoreBus.connect(this.bedBus);
+      this.scoreBus.gain.value = this.scoreLevel();
+      this.scoreBus.connect(this.musicBus);
+      this.watchPage();
     }
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (this.ctx.state === "suspended" && !this.isBackgrounded()) await this.ctx.resume();
     if (!this.loading) this.loading = this.preload();
     await this.loading;
     this.startBeds();
-    void this.playScore(this.arena);
+    if (this.musicEnabled) void this.playScore(this.arena);
     // Voices only matter on a capture, so they stream in behind the music
     // rather than holding up the first frame of the game.
     void this.primeDeathCries();
@@ -447,8 +532,11 @@ export class AudioManager {
     for (const layer of layers) {
       const buffer = this.buffers.get(layer.key);
       const gain = this.ctx.createGain();
-      gain.gain.value = BED_VOLUME[layer.name];
-      gain.connect(this.bedBus ?? this.master);
+      // The table may have been set before the mixer was unlocked.
+      const level = layer.name === "ambience" && this.tableMode ? 0 : BED_VOLUME[layer.name];
+      gain.gain.value = level;
+      // The tension stem is music; the hall's ambience is not.
+      gain.connect((layer.name === "tension" ? this.musicBus : this.bedBus) ?? this.master);
       let source: AudioBufferSourceNode | null = null;
       if (buffer) {
         source = this.ctx.createBufferSource();
@@ -457,16 +545,102 @@ export class AudioManager {
         source.connect(gain);
         source.start(0);
       }
-      this.beds.set(layer.name, { gain, source, target: BED_VOLUME[layer.name] });
+      this.beds.set(layer.name, { gain, source, target: level });
     }
   }
 
   /** 0 = calm, 1 = check / endgame. Crossfades the tension stem. */
   setIntensity(intensity: number): void {
+    this.intensity = Math.max(0, Math.min(1, intensity));
     if (!this.ctx) return;
-    const clamped = Math.max(0, Math.min(1, intensity));
-    this.fadeBed("tension", clamped * 0.5, 1.8);
-    this.fadeScoreBus(SCORE_VOLUME - clamped * 0.12, 1.8);
+    this.fadeBed("tension", this.intensity * 0.5, 1.8);
+    this.fadeScoreBus(this.scoreLevel(), 1.8);
+  }
+
+  /** Score bus level for the current intensity, in the hall or on a table. */
+  private scoreLevel(): number {
+    return (SCORE_VOLUME - this.intensity * 0.12) * (this.tableMode ? TABLE_SCORE_TRIM : 1);
+  }
+
+  /**
+   * The game moved onto a real table (true) or back into the hall. The hall's
+   * ambience bed belongs to the castle and goes silent in the player's own
+   * room, and the score steps back. Safe before `unlock()`.
+   */
+  setTableMode(table: boolean): void {
+    if (this.tableMode === table) return;
+    this.tableMode = table;
+    if (!this.ctx) return;
+    this.fadeBed("ambience", table ? 0 : BED_VOLUME.ambience, TABLE_FADE);
+    this.fadeScoreBus(this.scoreLevel(), TABLE_FADE);
+  }
+
+  /**
+   * The music alone (the score and the tension stem) on or off, remembered on
+   * this device with the mute. Battle sounds and the interface stay.
+   */
+  setMusicEnabled(enabled: boolean): void {
+    if (this.musicEnabled === enabled) return;
+    this.musicEnabled = enabled;
+    this.savePrefs();
+    const ctx = this.ctx;
+    if (!ctx || !this.musicBus) return;
+    const now = ctx.currentTime;
+    const gain = this.musicBus.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(enabled ? 1 : 0, now + 0.35);
+    if (enabled) {
+      void this.playScore(this.arena);
+    } else if (this.scoreVoice) {
+      // Nothing to hear: let go of the score rather than stream it silently.
+      this.stopScoreVoice(this.scoreVoice, 0.4);
+      this.scoreVoice = null;
+      this.scoreArena = null;
+    }
+  }
+
+  /**
+   * Streams and decodes a battleground's score ahead of time, so switching to
+   * it later (the headset menu steps through them in order) starts the music
+   * without a fetch. Does nothing before `unlock()` or with the music off.
+   */
+  prefetchScore(theme: ArenaTheme): void {
+    if (!this.ctx || !this.musicEnabled) return;
+    void this.loadScore(theme);
+  }
+
+  /**
+   * A headset session's visibility (null: the session ended). Hidden (the
+   * headset taken off) suspends the mixer; visible again resumes it.
+   */
+  setSessionVisibility(visibility: XRVisibilityState | null): void {
+    this.sessionVisibility = visibility;
+    this.applyBackground();
+  }
+
+  private isBackgrounded(): boolean {
+    if (this.sessionVisibility !== null) return this.sessionVisibility === "hidden";
+    return typeof document !== "undefined" && document.visibilityState === "hidden";
+  }
+
+  /** Suspends the mixer while nobody can hear it, and wakes it again. */
+  private applyBackground(): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === "closed") return;
+    const hidden = this.isBackgrounded();
+    if (hidden && ctx.state === "running") void ctx.suspend().catch(() => undefined);
+    else if (!hidden && ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+  }
+
+  private watchPage(): void {
+    if (this.watchingPage || typeof document === "undefined") return;
+    this.watchingPage = true;
+    document.addEventListener("visibilitychange", () => this.applyBackground());
+  }
+
+  private savePrefs(): void {
+    saveSoundPrefs({ muted: this.muted, music: this.musicEnabled });
   }
 
   /**
@@ -477,7 +651,7 @@ export class AudioManager {
   setArena(theme: ArenaTheme): void {
     if (this.arena === theme) return;
     this.arena = theme;
-    if (!this.ctx) return;
+    if (!this.ctx || !this.musicEnabled) return;
     void this.playScore(theme);
   }
 
@@ -517,7 +691,7 @@ export class AudioManager {
   private async playScore(theme: ArenaTheme): Promise<void> {
     if (this.scoreArena === theme) return;
     await this.loadScore(theme);
-    if (this.arena !== theme || this.scoreArena === theme) return;
+    if (this.arena !== theme || this.scoreArena === theme || !this.musicEnabled) return;
     const buffer = this.scoreBuffers.get(theme);
     if (!buffer || !this.ctx || !this.scoreBus) return;
     const previous = this.scoreVoice;
@@ -1885,8 +2059,12 @@ export class AudioManager {
     osc.stop(now + 0.3);
   }
 
+  /** Everything silent (true) or back, remembered on this device. */
   setMuted(muted: boolean): void {
-    this.muted = muted;
+    if (this.muted !== muted) {
+      this.muted = muted;
+      this.savePrefs();
+    }
     if (!this.master || !this.ctx) return;
     const now = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(now);
@@ -1909,6 +2087,8 @@ export class AudioManager {
     this.shotLoads.clear();
     this.activeVoices = 0;
     this.bedBus = null;
+    this.musicBus = null;
+    this.limiter = null;
     void this.ctx?.close();
     this.ctx = null;
   }
