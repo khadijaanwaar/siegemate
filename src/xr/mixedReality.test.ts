@@ -260,6 +260,20 @@ describe("MixedReality placement", () => {
   });
 });
 
+describe("MixedReality recentre", () => {
+  it("keeps the board on its spot of the table when the Meta button resets the reference space", async () => {
+    const { mixed, engine } = await playing();
+    expect(mixed.debugSizes().rigAt).toEqual([0, 0.8, -0.45]);
+    engine.space.dispatchEvent(new Event("reset"));
+    // The same head, seen from the new origin: moved and turned a quarter.
+    engine.frame(9, new THREE.Vector3(1, 1.2, 2), Math.PI / 2);
+    expect(mixed.debugSizes().rigAt).toEqual([0.55, 0.8, 2]);
+    // Without a reset, the head moving does not carry the board.
+    engine.frame(9.02, new THREE.Vector3(1.2, 1.2, 2), Math.PI / 2);
+    expect(mixed.debugSizes().rigAt).toEqual([0.55, 0.8, 2]);
+  });
+});
+
 describe("MixedReality sides", () => {
   it("turns the board so a player of black has their own army nearest, and back for white", async () => {
     const { mixed, game } = await playing({}, { playerColor: "b" });

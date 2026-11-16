@@ -10,7 +10,7 @@ import { palmFacesHead, palmNormal, PinchTracker, type PinchEvent } from "./hand
 import { Markers } from "./markers";
 import { loadBoardSize, pastDeadZone, saveBoardSize, TWO_HAND_REACH_M, TWO_HAND_SYNC_S, twoHandTransform, type TwoHandStart } from "./manipulate";
 import { GRAB_RADIUS_M, HandOrders } from "./orders";
-import { Placement, type HeadPose, type SurfaceHit } from "./placement";
+import { Placement, reanchorToHead, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
 import { RoomStyler } from "./roomStyler";
 import { nextArena, type BoardArea } from "./roomTheme";
@@ -101,6 +101,8 @@ export class MixedReality {
   private twoHand: TwoHandStart | null = null;
   /** The two-hand grab has left its dead zone and the board follows the hands. */
   private twoHandMoving = false;
+  /** The reference space was reset since the last frame (the Meta button). */
+  private recentered = false;
   /** False while the system menu is over the session or the headset is off (what {@link MixedRealityHooks.onFocus} last said). */
   private focused = true;
   private readonly unsubscribe: (() => void)[] = [];
@@ -205,6 +207,15 @@ export class MixedReality {
       // A new game from the headset menu may change sides.
       this.controller.on("reset", () => this.faceThePlayersArmy()),
     );
+    // The Meta button recentres the world: keep the board on its spot of the table.
+    const reference = this.engine.xrRenderer.xr.getReferenceSpace();
+    if (reference) {
+      const onReset = (): void => {
+        this.recentered = true;
+      };
+      reference.addEventListener("reset", onReset);
+      this.unsubscribe.push(() => reference.removeEventListener("reset", onReset));
+    }
     this.engine.setXrFrameHandler((time, frame) => this.onFrame(time / 1000, frame));
     this.setState("placing");
   }
@@ -322,7 +333,12 @@ export class MixedReality {
     const space = this.engine.xrRenderer.xr.getReferenceSpace();
     if (!space) return;
     const viewer = frame.getViewerPose(space);
-    if (viewer) this.readHead(viewer.transform);
+    if (viewer) {
+      const before = this.recentered && this.lastFrameAt > 0 ? { position: this.head.position.clone(), yaw: this.head.yaw } : null;
+      this.recentered = false;
+      this.readHead(viewer.transform);
+      if (before) this.reanchor(before);
+    }
 
     // The search for a table runs only while the player can see it: time under
     // the system menu or with the headset off never brings on the fallback.
@@ -730,6 +746,18 @@ export class MixedReality {
   private faceThePlayersArmy(): void {
     const snapshot = this.controller.getSnapshot();
     this.rig.setFlipped(snapshot.mode === "ai" && snapshot.playerColor === "b");
+  }
+
+  /**
+   * The reference space was reset (recentred): the head read just now is the
+   * same physical head as last frame's in a new frame of reference, so the
+   * board keeps its place relative to it, which is its place on the table.
+   */
+  private reanchor(before: HeadPose): void {
+    if (this.state !== "playing") return;
+    this.twoHand = null;
+    const pose = reanchorToHead({ position: this.rig.root.position.clone(), yaw: this.rig.root.rotation.y }, before, this.head);
+    this.rig.setPose(pose.position, pose.yaw);
   }
 
   private setFocused(focused: boolean): void {

@@ -245,6 +245,25 @@ try {
   const blackGame = await page.evaluate(() => window.__xr.snapshot().playerColor);
   check(blackGame === "b" && asBlack.e7 < asBlack.e2, "playing black, the board turns so black's army is the near one", JSON.stringify({ blackGame, ...asBlack }));
 
+  // ---- the player turns and steps aside, then recentres (the Meta button): the world's
+  // origin jumps to them, and the board must keep its place relative to them.
+  await page.evaluate(() => {
+    const device = window.__iwer;
+    device.position.set(device.position.x + 0.4, device.position.y, device.position.z + 0.2);
+    device.quaternion.set(0, Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)); // 30 degrees to the left
+  });
+  await page.waitForTimeout(300);
+  const flat = (s) => Math.hypot(s.rigAt[0] - s.head[0], s.rigAt[2] - s.head[2]);
+  const beforeRecenter = await page.evaluate(() => window.__xr.sizes());
+  await page.evaluate(() => window.__iwer.recenter());
+  await page.waitForTimeout(400);
+  const afterRecenter = await page.evaluate(() => window.__xr.sizes());
+  check(
+    Math.abs(flat(afterRecenter) - flat(beforeRecenter)) < 0.03 && afterRecenter.rigAt[2] < afterRecenter.head[2] && afterRecenter.rigVisible,
+    "after a recentre the board stays where it was relative to the player",
+    JSON.stringify({ before: [beforeRecenter.head, beforeRecenter.rigAt], after: [afterRecenter.head, afterRecenter.rigAt] }),
+  );
+
   // ---- quitting through the Quest menu: the menu blurs the session (the match pauses),
   // then the system ends it. The 2D game must carry on, not stay paused for good.
   await page.evaluate(() => window.__iwer.updateVisibilityState("visible-blurred"));

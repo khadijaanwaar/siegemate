@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { FALLBACK_AFTER_S, fallbackBoardPose, isReachableSurface, isTableSurface, Placement, yawFacing } from "./placement";
+import { FALLBACK_AFTER_S, fallbackBoardPose, isReachableSurface, isTableSurface, Placement, reanchorToHead, yawFacing } from "./placement";
 
 const up = new THREE.Vector3(0, 1, 0);
 const head = { position: new THREE.Vector3(0, 1.2, 0), yaw: 0 };
@@ -61,6 +61,27 @@ describe("yawFacing", () => {
   it("turns the white side toward the player", () => {
     expect(yawFacing(new THREE.Vector3(0, 0.75, -0.5), new THREE.Vector3(0, 1.2, 0))).toBeCloseTo(0, 6);
     expect(yawFacing(new THREE.Vector3(-0.5, 0.75, 0), new THREE.Vector3(0, 1.2, 0))).toBeCloseTo(Math.PI / 2, 6);
+  });
+});
+
+describe("reanchorToHead", () => {
+  it("keeps the board where it was relative to the player when the world's origin moves and turns under them", () => {
+    const board = { position: new THREE.Vector3(0, 0.8, -0.45), yaw: 0.2 };
+    const before = { position: new THREE.Vector3(0, 1.2, 0), yaw: 0 };
+    // Recentred: the same head is now at (1, 1.2, 2), facing -X in the new frame.
+    const after = { position: new THREE.Vector3(1, 1.2, 2), yaw: Math.PI / 2 };
+    const moved = reanchorToHead(board, before, after);
+    expect(moved.position.x).toBeCloseTo(0.55, 6);
+    expect(moved.position.y).toBeCloseTo(0.8, 6);
+    expect(moved.position.z).toBeCloseTo(2, 6);
+    expect(moved.yaw).toBeCloseTo(0.2 + Math.PI / 2, 6);
+  });
+
+  it("leaves the board alone when nothing moved", () => {
+    const board = { position: new THREE.Vector3(0.3, 0.8, -0.45), yaw: 1 };
+    const moved = reanchorToHead(board, head, head);
+    expect(moved.position.distanceTo(board.position)).toBeLessThan(1e-9);
+    expect(moved.yaw).toBeCloseTo(1, 9);
   });
 });
 

@@ -67,6 +67,18 @@ export function isReachableSurface(point: THREE.Vector3, head: THREE.Vector3): b
   return reach <= MAX_REACH_M && drop >= MIN_DROP_M && drop <= MAX_DROP_M;
 }
 
+/**
+ * After a recenter (the Meta button) the world's origin moves and turns under
+ * the player while the player and the real table stay put. The head before
+ * and after the reset is the same physical head, so the board keeps its
+ * offset and turn relative to it: it stays on the same spot of the table.
+ */
+export function reanchorToHead(board: BoardPose, before: HeadPose, after: HeadPose): BoardPose {
+  const turn = after.yaw - before.yaw;
+  const offset = board.position.clone().sub(before.position).applyAxisAngle(UP, turn);
+  return { position: offset.add(after.position), yaw: board.yaw + turn };
+}
+
 /** The yaw that turns the board's white side (+Z) toward `head`. */
 export function yawFacing(board: THREE.Vector3, head: THREE.Vector3): number {
   return Math.atan2(head.x - board.x, head.z - board.z);
