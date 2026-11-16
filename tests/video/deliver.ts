@@ -50,13 +50,13 @@ if (cmd === "stills") {
       used.set(s.file!, k + 1);
       const left = Math.max(0.05, total - s.t);
       const long = (s.seconds ?? 0) > 8 || s.loop;
-      const src = s.loop ? `[f${i}_${k}]aloop=loop=-1:size=2147483647,` : `[f${i}_${k}]`;
-      const dur = Math.min(left, s.loop ? left : (s.seconds ?? left));
+      const src = `[f${i}_${k}]`;
+      const dur = Math.min(left, s.seconds ?? left);
       parts.push(`${src}atrim=start=${(s.offset ?? 0).toFixed(3)}:duration=${dur.toFixed(3)},asetpts=PTS-STARTPTS,volume=${long ? 0.35 : 0.8},adelay=${Math.round(s.t * 1000)}:all=1[s${n}]`);
     });
-    parts.push(`${sounds.map((_, n) => `[s${n}]`).join("")}amix=inputs=${sounds.length}:normalize=0:duration=longest,apad,atrim=duration=${total.toFixed(3)},alimiter=limit=0.89[mix]`);
+    parts.push(`${sounds.map((_, n) => `[s${n}]`).join("")}amix=inputs=${sounds.length}:normalize=0:duration=longest,alimiter=limit=0.89,apad[mix]`);
     const tmp = mp4.replace(/\.mp4$/, ".sound.mp4");
-    ff(["-i", mp4, ...inputs, "-filter_complex", parts.join(";"), "-map", "0:v", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp]);
+    ff(["-i", mp4, ...inputs, "-filter_complex", parts.join(";"), "-map", "0:v", "-map", "[mix]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", total.toFixed(3), "-movflags", "+faststart", tmp]);
     fs.renameSync(tmp, mp4);
     console.log(`[film] ${name}: ${sounds.length} game samples laid in (rough; synthesized sounds are not in it)`);
   }
