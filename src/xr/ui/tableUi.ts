@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { GameController } from "../../core/gameController";
 import { loadStats, winRate } from "../../core/stats";
 import type { Difficulty, Faction, GameSnapshot } from "../../core/types";
+import { drawShareCard, SHARE_CARD } from "../../share/headsetShare";
 import type { TableRig } from "../tableRig";
 import { CanvasPanel, type PanelButton } from "./canvasPanel";
 import { Coach, coachCopy, type CoachInput, type CoachStep, type Pointer } from "./coach";
@@ -27,7 +28,7 @@ export interface TableUiActions {
   arenaLabel(): string;
 }
 
-type PanelName = "coach" | "slab" | "menu" | "result" | "perf";
+type PanelName = "coach" | "slab" | "menu" | "result" | "share" | "perf";
 
 /** `?debug` shows a frame-rate card beside the board (for testing on a device). */
 const SHOW_PERF = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug");
@@ -98,7 +99,8 @@ export class TableUi {
       coach: new CanvasPanel(0.42, 0.08),
       slab: new CanvasPanel(0.17, 0.085),
       menu: new CanvasPanel(0.26, 0.236),
-      result: new CanvasPanel(0.28, 0.13),
+      result: new CanvasPanel(0.28, 0.17),
+      share: new CanvasPanel(SHARE_CARD.width, SHARE_CARD.height),
       perf: new CanvasPanel(0.17, 0.05),
     };
     for (const panel of Object.values(this.panels)) {
@@ -118,6 +120,7 @@ export class TableUi {
         this.resultShown = false;
         this.pendingResult = false;
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
       }),
     );
   }
@@ -151,6 +154,7 @@ export class TableUi {
     if (!playing) {
       this.panels.menu.visible = false;
       this.panels.result.visible = false;
+      this.panels.share.visible = false;
     }
     this.layout(rig, input.mr);
     for (const panel of Object.values(this.panels)) panel.update(now);
@@ -321,6 +325,7 @@ export class TableUi {
         this.menuOpen = false;
         this.showMenu();
         this.panels.result.visible = false;
+        this.panels.share.visible = false;
         this.playerMoved = false;
         this.actions.newGame({ difficulty: this.strength, playerColor: this.side });
         break;
@@ -341,6 +346,13 @@ export class TableUi {
         break;
       case "exit":
         this.actions.exit();
+        break;
+      case "share":
+        this.showShare();
+        break;
+      case "share-back":
+        this.panels.share.visible = false;
+        this.panels.result.visible = true;
         break;
       default:
         break;
@@ -433,10 +445,21 @@ export class TableUi {
       buttons: [
         { id: "rematch", rect: [0.016, 0.08, 0.12, 0.036], label: "Rematch", tone: "primary" },
         { id: "exit", rect: [0.144, 0.08, 0.12, 0.036], label: "Exit" },
+        { id: "share", rect: [0.016, 0.128, 0.248, 0.032], label: "Share this battle" },
       ],
     });
     panel.visible = true;
     this.resultShown = true;
+  }
+
+  /** The replay link as a QR code a phone can scan, in place of the result card. */
+  private showShare(): void {
+    const panel = this.panels.share;
+    const content = drawShareCard();
+    if (!content) return;
+    this.setPanel(panel, content);
+    this.panels.result.visible = false;
+    panel.visible = true;
   }
 
   /** Puts each panel around the board, facing the player. */
@@ -469,6 +492,7 @@ export class TableUi {
     place(this.panels.perf, new THREE.Vector3(-half - 0.11, 0.02, half - 0.06), "tilt");
     place(this.panels.menu, new THREE.Vector3(half + 0.13, 0.16, half - 0.12), "player");
     place(this.panels.result, new THREE.Vector3(0, 0.16, 0), "player");
+    place(this.panels.share, new THREE.Vector3(0, 0.2, 0), "player");
   }
 }
 
