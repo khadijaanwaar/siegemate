@@ -165,14 +165,27 @@ export function useReplay(host: ReplayHost): {
       if (autoplay.current) clearTimeout(autoplay.current);
       autoplay.current = null;
     };
+    /**
+     * Leaving a finished position: the end-of-game shot has dollied onto the
+     * fallen king and softened the focus, so the viewer's seat is restored.
+     */
+    const leavingTheEnd = (jump: () => void): void => {
+      const wasOver = controller.getSnapshot().status === "over";
+      jump();
+      if (wasOver && controller.getSnapshot().status !== "over") {
+        const scene = hostRef.current.engine();
+        scene?.setShowcase(false);
+        scene?.setCameraPreset(seat(game));
+      }
+    };
     return {
       toggle: () => {
         halt();
-        driver.toggle();
+        leavingTheEnd(() => driver.toggle());
       },
       stepBack: () => {
         halt();
-        driver.stepBack();
+        leavingTheEnd(() => driver.stepBack());
       },
       stepForward: () => {
         halt();
@@ -181,7 +194,7 @@ export function useReplay(host: ReplayHost): {
       },
       toStart: () => {
         halt();
-        driver.seek(0);
+        leavingTheEnd(() => driver.seek(0));
       },
       toEnd: () => {
         halt();
@@ -196,6 +209,7 @@ export function useReplay(host: ReplayHost): {
             clearHash();
             controller.resume({ ...save, options, clock: { whiteMs: 0, blackMs: 0 } });
             const scene = hostRef.current.engine();
+            scene?.setShowcase(false);
             scene?.setInteractive(true);
             scene?.setCameraPreset(options.playerColor === "b" ? "black" : "white");
           }
