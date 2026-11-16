@@ -957,6 +957,8 @@ export class SceneEngine {
   private boardRevision = 0;
   /** Move animations currently in flight. */
   private movesInFlight = 0;
+  /** The last finished move beat, wall clock (ms) and engine clock (s): read by the perf specs. */
+  private lastBeat: { wallMs: number; engineS: number; capture: boolean } | null = null;
   /** A rebuild waiting for the board to go quiet (see {@link setQuality}). */
   private rebuildPending = false;
   /** Armies the player has asked for, applied by {@link syncArmies}. */
@@ -1011,6 +1013,12 @@ export class SceneEngine {
     autoRotate: boolean;
     scenery: (readonly [THREE.Object3D, boolean])[];
   } | null = null;
+  /**
+   * Table programs: "cold" until the first headset frame on the table, when
+   * every shader the table will draw is compiled behind the placement reticle
+   * (see {@link warmTablePrograms}).
+   */
+  private tableWarmth: "cold" | "compiling" | "warm" = "cold";
   private running = false;
   private disposed = false;
   private frameErrors = 0;
@@ -1306,6 +1314,52 @@ export class SceneEngine {
     this.scene.add(rig.root);
     this.idle.setBuckets(TABLE_IDLE_EVERY);
     this.refreshMaterials();
+    this.tableWarmth = "cold";
+  }
+
+  /**
+   * Compiles every program the table draws before the board is shown.
+   *
+   * Nothing a table frame draws matches a 2D program: the hall's lights and fog
+   * are gone, shadows are off, tone mapping moves into the shader (no
+   * post-processing) and the headset's multiview target adds a view-count
+   * define. Left alone, all of it compiled on the first frame the board was
+   * visible, a stall the player saw as the board appearing. So on the first
+   * headset frame (the XR target is bound, so multiview is in the key) the
+   * scene is compiled as it will look once placed: the rig shown, the hall's
+   * put-away scenery left out. With KHR_parallel_shader_compile the driver
+   * links in the background while the reticle is still searching.
+   */
+  private warmTablePrograms(): void {
+    const rig = this.table;
+    const restore = this.tableRestore;
+    const xr = this.renderer.xr;
+    if (!rig || !restore || this.tableWarmth !== "cold") return;
+    // Only inside a headset frame: outside one the multiview define is missing.
+    // (Public on WebXRManager, missing from its typings.)
+    const target = xr.isPresenting ? (xr as unknown as { getRenderTarget(): THREE.WebGLRenderTarget | null }).getRenderTarget() : null;
+    if (!target || this.renderer.getRenderTarget() !== target) return;
+    this.tableWarmth = "compiling";
+    const children = this.scene.children;
+    const putAway = new Set<THREE.Object3D>(restore.scenery.map(([group]) => group));
+    const shown = rig.root.visible;
+    // Swapped in place (no add/remove events, no reparenting) and put back
+    // straight after the synchronous part of the compile.
+    this.scene.children = children.filter((child) => !putAway.has(child));
+    rig.root.visible = true;
+    let compiled: Promise<unknown>;
+    try {
+      compiled = this.renderer.compileAsync(this.scene, this.camera);
+    } catch (error) {
+      console.warn("[scene] could not warm the table's shaders", error);
+      compiled = Promise.resolve();
+    } finally {
+      rig.root.visible = shown;
+      this.scene.children = children;
+    }
+    void compiled.then(() => {
+      if (this.tableWarmth === "compiling") this.tableWarmth = "warm";
+    });
   }
 
   /** Back to the 2D hall exactly as it was. */
@@ -1482,6 +1536,12 @@ export class SceneEngine {
         return piece ? listDrawables(piece.object) : null;
       },
       preset: () => this.preset,
+      /** Every shader program alive, by id: a new id is a compile. */
+      programs: () => (this.renderer.info.programs ?? []).map((program) => ({ id: program.id, key: program.cacheKey })),
+      /** Move beats running now, and how long the last one took. */
+      moving: () => this.movesInFlight,
+      lastBeat: () => this.lastBeat,
+      tableWarmth: () => this.tableWarmth,
     };
     (window as unknown as { __scene: typeof stats }).__scene = stats;
   }
@@ -1578,6 +1638,7 @@ export class SceneEngine {
     if (this.tactical) this.alignTokens();
 
     if (this.table) {
+      if (this.tableWarmth === "cold") this.warmTablePrograms();
       // The headset owns the camera, and post-processing would switch off
       // fixed foveation: draw straight to the XR framebuffer. Light must add to
       // the room, not darken it (see lightBlend.ts).
@@ -1871,10 +1932,13 @@ export class SceneEngine {
 
   private async animateMove(event: MoveEvent): Promise<void> {
     this.movesInFlight += 1;
+    const startedMs = performance.now();
+    const startedS = this.elapsed;
     try {
       await this.runMove(event);
     } finally {
       this.movesInFlight -= 1;
+      this.lastBeat = { wallMs: performance.now() - startedMs, engineS: this.elapsed - startedS, capture: Boolean(event.capture) };
       // A quality change that arrived mid-fight was held back; run it now.
       if (this.movesInFlight === 0 && this.rebuildPending) this.rebuildPieces();
     }
