@@ -8,7 +8,7 @@ import type { SquareId } from "../core/types";
 import { buttonPressed, PressTracker, PRIMARY, pulse, SQUEEZE, TRIGGER } from "./controllers";
 import { palmFacesHead, palmNormal, PinchTracker, type PinchEvent } from "./hands";
 import { Markers } from "./markers";
-import { loadBoardSize, saveBoardSize, twoHandTransform, type TwoHandStart } from "./manipulate";
+import { loadBoardSize, pastDeadZone, saveBoardSize, TWO_HAND_REACH_M, TWO_HAND_SYNC_S, twoHandTransform, type TwoHandStart } from "./manipulate";
 import { GRAB_RADIUS_M, HandOrders } from "./orders";
 import { Placement, type HeadPose, type SurfaceHit } from "./placement";
 import { startTableSession, type TableSession } from "./session";
@@ -69,6 +69,9 @@ interface HandSlot {
   kind: InputKind | null;
   /** Its pointer ray last frame (tests and diagnostics). */
   ray: THREE.Ray | null;
+  /** When its current hold (pinch, or grip) closed, and whether that was within reach of the board. */
+  holdSince: number | null;
+  holdNear: boolean;
 }
 
 interface InputRead {
@@ -96,6 +99,8 @@ export class MixedReality {
   private state: MixedRealityState = "off";
   /** Set while both hands pinch away from any figure: they carry, turn and resize the board. */
   private twoHand: TwoHandStart | null = null;
+  /** The two-hand grab has left its dead zone and the board follows the hands. */
+  private twoHandMoving = false;
   /** False while the system menu is over the session or the headset is off (what {@link MixedRealityHooks.onFocus} last said). */
   private focused = true;
   private readonly unsubscribe: (() => void)[] = [];
@@ -136,6 +141,8 @@ export class MixedReality {
         panelPinch: false,
         kind: null,
         ray: null,
+        holdSince: null,
+        holdNear: false,
       });
     }
     this.ui = new TableUi(controller, {
@@ -522,7 +529,7 @@ export class MixedReality {
       if (event === "lost") slot.panelPinch = false;
     }
 
-    this.updateTwoHand();
+    this.updateTwoHand(now);
 
     let ordering = false;
     let ring: SquareId | null = null;
@@ -569,13 +576,24 @@ export class MixedReality {
     else if (anyHand) this.pointer = "hands";
   }
 
-  /** Both sides holding (pinch, or grip on a controller), neither giving an order: they carry, turn and resize the board. */
-  private updateTwoHand(): void {
-    const left = this.holdPoint(this.hands.get("left"));
-    const right = this.holdPoint(this.hands.get("right"));
-    if (this.state === "playing" && left && right) {
+  /**
+   * Both sides holding (pinch, or grip on a controller), neither giving an
+   * order: they carry, turn and resize the board. Only a deliberate grab
+   * counts: both closed within {@link TWO_HAND_SYNC_S} of each other and
+   * within {@link TWO_HAND_REACH_M} of the board. Then nothing moves until the
+   * hands leave the dead zone, and the board follows on from there.
+   */
+  private updateTwoHand(now: number): void {
+    const leftSlot = this.hands.get("left");
+    const rightSlot = this.hands.get("right");
+    const left = this.trackHold(leftSlot, now);
+    const right = this.trackHold(rightSlot, now);
+    if (this.state === "playing" && left && right && leftSlot && rightSlot) {
       if (!this.twoHand) {
+        const together = Math.abs((leftSlot.holdSince ?? 0) - (rightSlot.holdSince ?? 0)) <= TWO_HAND_SYNC_S;
+        if (!together || !leftSlot.holdNear || !rightSlot.holdNear) return;
         for (const slot of this.hands.values()) slot.orders.cancelAim();
+        this.twoHandMoving = false;
         this.twoHand = {
           left: left.clone(),
           right: right.clone(),
@@ -585,6 +603,13 @@ export class MixedReality {
           keepHeight: !this.rig.plinthVisible,
         };
       }
+      if (!this.twoHandMoving) {
+        if (!pastDeadZone(this.twoHand, { left, right })) return;
+        // Pick up from here, so leaving the dead zone never makes the board jump.
+        this.twoHandMoving = true;
+        this.twoHand.left.copy(left);
+        this.twoHand.right.copy(right);
+      }
       const next = twoHandTransform(this.twoHand, { left, right });
       this.rig.setPose(next.position, next.yaw);
       this.rig.setScale(next.scale);
@@ -592,6 +617,18 @@ export class MixedReality {
       this.twoHand = null;
       saveBoardSize(safeStorage(), this.rig.scaleMultiplier);
     }
+  }
+
+  /** A side's hold point, noting when the hold closed and whether it closed on the board. */
+  private trackHold(slot: HandSlot | undefined, now: number): THREE.Vector3 | null {
+    const point = this.holdPoint(slot);
+    if (!slot) return null;
+    if (!point) slot.holdSince = null;
+    else if (slot.holdSince === null) {
+      slot.holdSince = now;
+      slot.holdNear = this.rig.root.visible && this.rig.distanceToBoard(point, BOARD_HALF_UNITS) <= TWO_HAND_REACH_M;
+    }
+    return point;
   }
 
   private holdPoint(slot: HandSlot | undefined): THREE.Vector3 | null {

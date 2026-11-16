@@ -89,6 +89,19 @@ export class TableRig {
     return Math.abs(x) <= half && Math.abs(z) <= half ? distance : null;
   }
 
+  /** Metres from a world point to the board's block (the surface it stands on up to its top), `halfUnits` wide each way. */
+  distanceToBoard(point: THREE.Vector3, halfUnits: number): number {
+    this.root.updateMatrixWorld(true);
+    this.inverse.copy(this.root.matrixWorld).invert();
+    const local = this.localPoint.copy(point).applyMatrix4(this.inverse);
+    const half = halfUnits * this.unitsToMeters;
+    const dx = Math.max(Math.abs(local.x) - half, 0);
+    const dz = Math.max(Math.abs(local.z) - half, 0);
+    const dy = local.y > this.content.position.y ? local.y - this.content.position.y : Math.max(-local.y, 0);
+    return Math.hypot(dx, dy, dz);
+  }
+
+  private readonly localPoint = new THREE.Vector3();
   private readonly inverse = new THREE.Matrix4();
   private readonly localRay = new THREE.Ray();
 

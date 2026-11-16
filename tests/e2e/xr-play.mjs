@@ -155,37 +155,72 @@ try {
   check(!fresh.ui.panels.includes("menu"), "the menu closes after New game", JSON.stringify(fresh.ui));
   const onboarded = await page.evaluate(() => localStorage.getItem("mr-chess:onboarded"));
 
-  // ---- two hands pinch away from the figures and pull apart: the board grows.
+  // ---- two hands pinch beside the board, together, and pull apart: the board grows.
+  // Pinched high above it they are not a grab (a pinch has to close within 10 cm of the board).
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
   await page.evaluate(() => {
-    const { left, right } = window.__iwer.hands;
-    for (const hand of [left, right]) {
-      hand.quaternion.set(0, 0, 0, 1);
-      hand.poseId = "open";
+    const left = window.__iwer.hands.left;
+    left.quaternion.set(0, 0, 0, 1);
+    left.position.set(-3, 1.2, 2);
+    left.poseId = "pinch";
+  });
+  await page.waitForTimeout(400);
+  const leftOffset = await page.evaluate(() => {
+    const hand = window.__iwer.hands.left.position;
+    const pinch = window.__xr.pinch("left");
+    return { x: pinch.x - hand.x, y: pinch.y - hand.y, z: pinch.z - hand.z };
+  });
+  const offsets = { left: leftOffset, right: calibration.offset };
+  const edges = await page.evaluate(() => {
+    const mid = (a, b) => {
+      const p = window.__xr.squareWorld(a);
+      const q = window.__xr.squareWorld(b);
+      return { x: (p.x + q.x) / 2, y: p.y, z: (p.z + q.z) / 2 };
+    };
+    return { a: mid("a4", "a5"), h: mid("h4", "h5") };
+  });
+  // About 2.5 cm outside the a and h edges, 3 cm above the tiles: no figure in reach, the rays off the board.
+  const pinchAt = (side, x, y, z) => ({ x: x - offsets[side].x, y: y - offsets[side].y, z: z - offsets[side].z });
+  const twoHandSpread = async (lift, steps, each) => {
+    await page.evaluate(() => {
+      for (const hand of [window.__iwer.hands.left, window.__iwer.hands.right]) {
+        hand.quaternion.set(0, 0, 0, 1);
+        hand.poseId = "open";
+      }
+    });
+    const place = (spread) =>
+      page.evaluate(
+        ({ l, r }) => {
+          window.__iwer.hands.left.position.set(l.x, l.y, l.z);
+          window.__iwer.hands.right.position.set(r.x, r.y, r.z);
+        },
+        {
+          l: pinchAt("left", edges.a.x - 0.1 - spread, edges.a.y + lift, edges.a.z),
+          r: pinchAt("right", edges.h.x + 0.1 + spread, edges.h.y + lift, edges.h.z),
+        },
+      );
+    await place(0);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      window.__iwer.hands.left.poseId = "pinch";
+      window.__iwer.hands.right.poseId = "pinch";
+    });
+    await page.waitForTimeout(300);
+    for (let step = 1; step <= steps; step += 1) {
+      await place(step * each);
+      await page.waitForTimeout(40);
     }
-    // Well above the board, out to the sides: no figure in reach.
-    left.position.set(-0.15, 1.45, -0.35);
-    right.position.set(0.15, 1.45, -0.35);
-  });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => {
-    window.__iwer.hands.left.poseId = "pinch";
-    window.__iwer.hands.right.poseId = "pinch";
-  });
-  await page.waitForTimeout(300);
-  for (let step = 1; step <= 8; step += 1) {
-    await page.evaluate((spread) => {
-      window.__iwer.hands.left.position.set(-0.15 - spread, 1.45, -0.35);
-      window.__iwer.hands.right.position.set(0.15 + spread, 1.45, -0.35);
-    }, step * 0.01);
-    await page.waitForTimeout(40);
-  }
-  const sizeDuring = await page.evaluate(() => window.__xr.boardSize());
-  await page.evaluate(() => {
-    window.__iwer.hands.left.poseId = "open";
-    window.__iwer.hands.right.poseId = "open";
-  });
-  await page.waitForTimeout(300);
+    const size = await page.evaluate(() => window.__xr.boardSize());
+    await page.evaluate(() => {
+      window.__iwer.hands.left.poseId = "open";
+      window.__iwer.hands.right.poseId = "open";
+    });
+    await page.waitForTimeout(300);
+    return size;
+  };
+  const sizeHigh = await twoHandSpread(0.5, 10, 0.015);
+  check(sizeHigh === sizeBefore, "two pinches high above the board do not resize it", `${sizeBefore} -> ${sizeHigh}`);
+  const sizeDuring = await twoHandSpread(0.03, 10, 0.015);
   const stored = await page.evaluate(() => localStorage.getItem("mr-chess:board-size"));
   check(sizeDuring > sizeBefore * 1.15, "pulling two pinched hands apart grows the board", `${sizeBefore} -> ${sizeDuring}`);
   check(stored !== null && Math.abs(Number(stored) - sizeDuring) < 0.01, "the new size is remembered", String(stored));

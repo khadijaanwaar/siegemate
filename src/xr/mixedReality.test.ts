@@ -309,6 +309,69 @@ function drawnRays(mixed: InstanceType<typeof MixedReality>): number {
   return group.children.filter((child) => (child as THREE.Line).isLine && child.visible).length;
 }
 
+describe("MixedReality two-hand grab", () => {
+  // The fallback board stands at (0, 0.8, -0.45), about 28 cm each way from its centre.
+  const leftEdge = new THREE.Vector3(-0.3, 0.85, -0.45);
+  const rightEdge = new THREE.Vector3(0.3, 0.85, -0.45);
+
+  async function twoHands() {
+    const setup = await playing();
+    const left = fakeInput("left", "hand");
+    const right = fakeInput("right", "hand");
+    setup.engine.setInputs([left, right], setup.table);
+    return { ...setup, left, right };
+  }
+
+  /** Both hands pinched at `l` and `r`, then spread `spread` metres each way over a few frames. */
+  function grabAndSpread(setup: Awaited<ReturnType<typeof twoHands>>, l: THREE.Vector3, r: THREE.Vector3, spread: number, gapS = 0): void {
+    const { engine, left, right } = setup;
+    left.pinch(false, l);
+    right.pinch(false, r);
+    engine.frame(9);
+    left.pinch(true, l);
+    engine.frame(9.02);
+    let now = 9.02 + gapS;
+    right.pinch(true, r);
+    engine.frame(now);
+    for (let step = 1; step <= 6; step += 1) {
+      now += 0.02;
+      const offset = new THREE.Vector3((spread * step) / 6, 0, 0);
+      left.pinch(true, l.clone().sub(offset));
+      right.pinch(true, r.clone().add(offset));
+      engine.frame(now);
+    }
+  }
+
+  it("two pinches closed together beside the board, pulled apart, grow it", async () => {
+    const setup = await twoHands();
+    const before = setup.mixed.boardSize;
+    grabAndSpread(setup, leftEdge, rightEdge, 0.1);
+    expect(setup.mixed.boardSize).toBeGreaterThan(before * 1.1);
+  });
+
+  it("a second pinch long after the first is not a grab", async () => {
+    const setup = await twoHands();
+    const before = setup.mixed.boardSize;
+    grabAndSpread(setup, leftEdge, rightEdge, 0.06, 0.5);
+    expect(setup.mixed.boardSize).toBe(before);
+  });
+
+  it("two pinches away from the board are not a grab", async () => {
+    const setup = await twoHands();
+    const before = setup.mixed.boardSize;
+    grabAndSpread(setup, leftEdge.clone().setY(1.2), rightEdge.clone().setY(1.2), 0.06);
+    expect(setup.mixed.boardSize).toBe(before);
+  });
+
+  it("the wobble of closing two pinches moves nothing", async () => {
+    const setup = await twoHands();
+    const before = { size: setup.mixed.boardSize, at: setup.mixed.debugSizes().rigAt };
+    grabAndSpread(setup, leftEdge, rightEdge, 0.012);
+    expect(setup.mixed.boardSize).toBe(before.size);
+    expect(setup.mixed.debugSizes().rigAt).toEqual(before.at);
+  });
+});
+
 describe("MixedReality hands", () => {
   const atPawn = new THREE.Vector3(0.02, 0.85, -0.4);
 

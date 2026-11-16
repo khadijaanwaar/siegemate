@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { BOARD_SIZE_KEY, DEFAULT_BOARD_SIZE, loadBoardSize, saveBoardSize, twoHandTransform } from "./manipulate";
+import { BOARD_SIZE_KEY, DEFAULT_BOARD_SIZE, loadBoardSize, pastDeadZone, saveBoardSize, twoHandTransform } from "./manipulate";
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const start = {
@@ -21,10 +21,16 @@ describe("twoHandTransform", () => {
     expect(result.position.distanceTo(start.position)).toBeLessThan(1e-9);
   });
 
-  it("grows with the hands pulled apart and shrinks as they close, within limits", () => {
-    expect(twoHandTransform(start, { left: v(-0.13, 0.9, -0.4), right: v(0.13, 0.9, -0.4) }).scale).toBeCloseTo(1.3, 6);
+  it("grows with the hands pulled apart and shrinks as they close, past a 5% band, within limits", () => {
+    expect(twoHandTransform(start, { left: v(-0.13, 0.9, -0.4), right: v(0.13, 0.9, -0.4) }).scale).toBeCloseTo(1.3 / 1.05, 6);
+    expect(twoHandTransform(start, { left: v(-0.08, 0.9, -0.4), right: v(0.08, 0.9, -0.4) }).scale).toBeCloseTo(0.8 / 0.95, 6);
     expect(twoHandTransform(start, { left: v(-0.05, 0.9, -0.4), right: v(0.05, 0.9, -0.4) }).scale).toBeCloseTo(0.6, 6);
     expect(twoHandTransform(start, { left: v(-0.5, 0.9, -0.4), right: v(0.5, 0.9, -0.4) }).scale).toBeCloseTo(1.6, 6);
+  });
+
+  it("holds the size while the hands' span stays within 5% (carrying and turning never resize by accident)", () => {
+    expect(twoHandTransform(start, { left: v(-0.104, 0.9, -0.4), right: v(0.104, 0.9, -0.4) }).scale).toBe(1);
+    expect(twoHandTransform(start, { left: v(-0.096, 0.9, -0.4), right: v(0.096, 0.9, -0.4) }).scale).toBe(1);
   });
 
   it("follows the hands across the table but keeps it on the table's height", () => {
@@ -43,6 +49,25 @@ describe("twoHandTransform", () => {
     // Right hand swings back toward the player, left forward: a quarter turn left.
     const turned = twoHandTransform(start, { left: v(0, 0.9, -0.5), right: v(0, 0.9, -0.3) });
     expect(Math.abs(turned.yaw)).toBeCloseTo(Math.PI / 2, 6);
+  });
+});
+
+describe("pastDeadZone", () => {
+  const turned = (degrees: number) => {
+    const angle = (degrees * Math.PI) / 180;
+    return { left: v(-0.1 * Math.cos(angle), 0.9, -0.4 + 0.1 * Math.sin(angle)), right: v(0.1 * Math.cos(angle), 0.9, -0.4 - 0.1 * Math.sin(angle)) };
+  };
+
+  it("ignores the small wobble of two hands closing together", () => {
+    expect(pastDeadZone(start, { left: v(-0.1, 0.9, -0.385), right: v(0.1, 0.9, -0.385) })).toBe(false);
+    expect(pastDeadZone(start, turned(4))).toBe(false);
+    expect(pastDeadZone(start, { left: v(-0.104, 0.9, -0.4), right: v(0.104, 0.9, -0.4) })).toBe(false);
+  });
+
+  it("lets go of the board past 2 cm of carry, 5 degrees of turn or 5% of spread", () => {
+    expect(pastDeadZone(start, { left: v(-0.1, 0.9, -0.375), right: v(0.1, 0.9, -0.375) })).toBe(true);
+    expect(pastDeadZone(start, turned(6))).toBe(true);
+    expect(pastDeadZone(start, { left: v(-0.106, 0.9, -0.4), right: v(0.106, 0.9, -0.4) })).toBe(true);
   });
 });
 

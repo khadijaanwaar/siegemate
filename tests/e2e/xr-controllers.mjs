@@ -185,25 +185,38 @@ try {
   check(/ w /.test(await page.evaluate(() => window.__xr.snapshot().fen)), "the machine replies after the crown", "");
   await page.waitForTimeout(3000); // let the reply's march finish
 
-  // ---- both grips pull apart: the board grows and the size is kept.
+  // ---- both grips close beside the board and pull apart: the board grows and the size is kept.
   const sizeBefore = await page.evaluate(() => window.__xr.boardSize());
-  await page.evaluate(() => {
-    const { left, right } = window.__iwer.controllers;
-    for (const controller of [left, right]) controller.quaternion.set(0, 0, 0, 1);
-    left.position.set(-0.15, 1.45, -0.35);
-    right.position.set(0.15, 1.45, -0.35);
+  const edges = await page.evaluate(() => {
+    const mid = (a, b) => {
+      const p = window.__xr.squareWorld(a);
+      const q = window.__xr.squareWorld(b);
+      return { x: (p.x + q.x) / 2, y: p.y, z: (p.z + q.z) / 2 };
+    };
+    return { a: mid("a4", "a5"), h: mid("h4", "h5") };
   });
+  // About 2.5 cm outside the a and h edges, 3 cm above the tiles (a grab must close within 10 cm of the board).
+  const placeGrips = (spread) =>
+    page.evaluate(
+      ({ edges, spread }) => {
+        const { left, right } = window.__iwer.controllers;
+        left.position.set(edges.a.x - 0.1 - spread, edges.a.y + 0.03, edges.a.z);
+        right.position.set(edges.h.x + 0.1 + spread, edges.h.y + 0.03, edges.h.z);
+      },
+      { edges, spread },
+    );
+  await page.evaluate(() => {
+    for (const controller of [window.__iwer.controllers.left, window.__iwer.controllers.right]) controller.quaternion.set(0, 0, 0, 1);
+  });
+  await placeGrips(0);
   await page.waitForTimeout(250);
   await page.evaluate(() => {
     window.__iwer.controllers.left.updateButtonValue("squeeze", 1);
     window.__iwer.controllers.right.updateButtonValue("squeeze", 1);
   });
   await page.waitForTimeout(250);
-  for (let step = 1; step <= 8; step += 1) {
-    await page.evaluate((spread) => {
-      window.__iwer.controllers.left.position.set(-0.15 - spread, 1.45, -0.35);
-      window.__iwer.controllers.right.position.set(0.15 + spread, 1.45, -0.35);
-    }, step * 0.01);
+  for (let step = 1; step <= 10; step += 1) {
+    await placeGrips(step * 0.015);
     await page.waitForTimeout(40);
   }
   const sizeDuring = await page.evaluate(() => window.__xr.boardSize());
