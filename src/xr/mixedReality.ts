@@ -463,7 +463,10 @@ export class MixedReality {
             : false;
         event = slot.pinch.update(thumb, index, now, { allowStart: !systemGesture });
         point = slot.pinch.point;
-        poking = this.ui.poke(source.handedness, index ? this.fingertip.copy(index) : null);
+        // A hand mid-order (carrying a figure, or aiming) pokes nothing: its
+        // fingertip passing a panel must neither press it nor swallow the release.
+        const busy = slot.orders.mode !== "idle";
+        poking = this.ui.poke(source.handedness, index && !busy ? this.fingertip.copy(index) : null);
         poked ||= poking;
       } else {
         event = slot.trigger.update(buttonPressed(source.gamepad, TRIGGER), ray ? ray.origin : null, now);

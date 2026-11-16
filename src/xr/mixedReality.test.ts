@@ -7,6 +7,9 @@ import type { SceneEngine } from "../scene/sceneEngine";
 import type { MixedRealityHooks } from "./mixedReality";
 import type { TableSession } from "./session";
 
+/** What the stand-in panels report: whether a fingertip is in a panel's poke volume, and what was asked of them. */
+const panels = vi.hoisted(() => ({ fingertipOnPanel: false, rayOnPanel: null as null | { distance: number }, calls: [] as string[] }));
+
 // The panels and the room draw into 2D canvases; neither exists under node, and
 // neither is what these tests are about.
 vi.mock("./ui/tableUi", async () => {
@@ -17,14 +20,17 @@ vi.mock("./ui/tableUi", async () => {
       lessonMove = null;
       update(): void {}
       showPerf(): void {}
-      poke(): boolean {
-        return false;
+      poke(hand: string, fingertip: unknown): boolean {
+        return fingertip !== null && panels.fingertipOnPanel;
       }
-      rayTarget(): null {
-        return null;
+      rayTarget(): unknown {
+        return panels.rayOnPanel ? { panel: {}, button: null, distance: panels.rayOnPanel.distance } : null;
       }
       hoverRay(): void {}
       pressTarget(): void {}
+      toggleMenu(): void {
+        panels.calls.push("toggleMenu");
+      }
     },
   };
 });
@@ -87,9 +93,53 @@ function fakeTable() {
   };
 }
 
+/** A tracked hand or a Touch controller the test moves by hand. */
+interface FakeInput {
+  source: XRInputSource;
+  joints: Map<string, THREE.Vector3>;
+  ray: { origin: THREE.Vector3; direction: THREE.Vector3 } | null;
+  /** Thumb and index tips together (pinched) or apart, around `at`. */
+  pinch(pinched: boolean, at: THREE.Vector3): void;
+  /** Where its pointer ray starts and points. */
+  aim(origin: THREE.Vector3, direction: THREE.Vector3): void;
+}
+
+function fakeInput(handedness: XRHandedness, kind: "hand" | "controller"): FakeInput {
+  const joints = new Map<string, THREE.Vector3>();
+  const source: Record<string, unknown> = {
+    handedness,
+    targetRayMode: "tracked-pointer",
+    targetRaySpace: handedness + ":ray",
+  };
+  if (kind === "hand") source.hand = { get: (name: string) => handedness + ":" + name };
+  else source.gamepad = { buttons: [0, 1, 2, 3, 4, 5].map(() => ({ pressed: false })), axes: [0, 0, 0, 0] };
+  const input: FakeInput = {
+    source: source as unknown as XRInputSource,
+    joints,
+    ray: null,
+    pinch(pinched, at) {
+      const half = pinched ? 0.004 : 0.02;
+      joints.set(handedness + ":thumb-tip", at.clone().add(new THREE.Vector3(0, -half, 0)));
+      joints.set(handedness + ":index-finger-tip", at.clone().add(new THREE.Vector3(0, half, 0)));
+      input.ray ??= { origin: at.clone(), direction: new THREE.Vector3(0, 0, -1) };
+    },
+    aim(origin, direction) {
+      input.ray = { origin: origin.clone(), direction: direction.clone().normalize() };
+    },
+  };
+  return input;
+}
+
 function fakeEngine() {
   const space = new EventTarget() as unknown as XRReferenceSpace;
   let handler: FrameHandler = null;
+  let inputs: FakeInput[] = [];
+  const pose = (position: THREE.Vector3, orientation = new THREE.Quaternion()) => ({
+    transform: {
+      position: { x: position.x, y: position.y, z: position.z },
+      orientation: { x: orientation.x, y: orientation.y, z: orientation.z, w: orientation.w },
+    },
+  });
   const engine = {
     xrScene: new THREE.Scene(),
     xrRenderer: { xr: { getReferenceSpace: () => space }, info: { render: { calls: 0 } } },
@@ -101,24 +151,46 @@ function fakeEngine() {
     previewMove: vi.fn(),
     getArena: () => "jungle",
     pendingPromotion: null,
-    figureNear: () => null,
-    pickWithRay: () => ({ square: null }),
+    orderedSquare: null as string | null,
+    figureNear: vi.fn((): string | null => null),
+    beginOrder: vi.fn(() => true),
+    squareAtWorld: vi.fn((): string | null => null),
+    releaseOrder: vi.fn(),
+    cancelOrder: vi.fn(),
+    pickWithRay: vi.fn((): { square: string | null } => ({ square: null })),
+    canOrder: vi.fn(() => false),
+    tapSquare: vi.fn(),
+    isLegalTarget: vi.fn(() => false),
+    squareCenterWorld: (square: string, out: THREE.Vector3) => out.set(0, 0.8, -0.45),
   };
   return {
     engine: engine as unknown as SceneEngine,
+    fake: engine,
     space,
+    /** The hands and controllers the session lists from now on. */
+    setInputs(next: FakeInput[], table: ReturnType<typeof fakeTable>) {
+      inputs = next;
+      table.session.inputSources = next.map((input) => input.source);
+    },
     /** One headset frame with the eyes at `head` looking along `yaw` (0 = -Z). */
     frame(seconds: number, head = new THREE.Vector3(0, 1.2, 0), yaw = 0) {
       const orientation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       const frame = {
-        getViewerPose: () => ({
-          transform: {
-            position: { x: head.x, y: head.y, z: head.z },
-            orientation: { x: orientation.x, y: orientation.y, z: orientation.z, w: orientation.w },
-          },
-        }),
+        getViewerPose: () => pose(head, orientation),
         getHitTestResults: () => [],
-        getPose: () => undefined,
+        getJointPose: (joint: unknown) => {
+          for (const input of inputs) {
+            const at = input.joints.get(joint as string);
+            if (at) return pose(at);
+          }
+          return undefined;
+        },
+        getPose: (raySpace: unknown) => {
+          const input = inputs.find((candidate) => (candidate.source.targetRaySpace as unknown) === raySpace);
+          if (!input?.ray) return undefined;
+          const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), input.ray.direction);
+          return pose(input.ray.origin, turn);
+        },
       };
       handler?.(seconds * 1000, frame as unknown as XRFrame);
     },
@@ -153,14 +225,25 @@ async function entered(hooks: MixedRealityHooks = {}, snapshot = {}) {
   return { mixed, table, engine, game };
 }
 
-beforeEach(() => {
-  sessions.start.mockReset();
-});
-
 /** Headset frames from `from` to `to` seconds at 72 Hz. */
 function run(engine: ReturnType<typeof fakeEngine>, from: number, to: number): void {
   for (let now = from; now <= to + 1e-9; now += 1 / 72) engine.frame(now);
 }
+
+/** Entered, and the board settled at seat height (no table in the fake session). */
+async function playing(hooks: MixedRealityHooks = {}, snapshot = {}) {
+  const setup = await entered(hooks, snapshot);
+  run(setup.engine, 0, 8.2);
+  expect(setup.mixed.current).toBe("playing");
+  return setup;
+}
+
+beforeEach(() => {
+  sessions.start.mockReset();
+  panels.fingertipOnPanel = false;
+  panels.rayOnPanel = null;
+  panels.calls = [];
+});
 
 describe("MixedReality placement", () => {
   it("falls back to seat height after 8 s of visible searching, not counting time under the system menu", async () => {
@@ -193,5 +276,27 @@ describe("MixedReality lifecycle", () => {
     const { mixed } = await entered({ onFocus: (focused) => focus.push(focused) });
     await mixed.exit();
     expect(focus).toEqual([]);
+  });
+});
+
+describe("MixedReality hands", () => {
+  const atPawn = new THREE.Vector3(0.02, 0.85, -0.4);
+
+  it("lets an ordering hand's release through even with its fingertip in a panel's poke volume", async () => {
+    const { engine, table } = await playing();
+    const hand = fakeInput("right", "hand");
+    engine.setInputs([hand], table);
+    engine.fake.figureNear.mockReturnValue("e2");
+    hand.pinch(false, atPawn);
+    engine.frame(9);
+    hand.pinch(true, atPawn);
+    engine.frame(9.02);
+    expect(engine.fake.beginOrder).toHaveBeenCalledWith("e2");
+    // Carrying the figure past the slab: the fingertip enters a panel's poke volume.
+    panels.fingertipOnPanel = true;
+    engine.frame(9.04);
+    hand.pinch(false, atPawn);
+    engine.frame(9.06);
+    expect(engine.fake.releaseOrder).toHaveBeenCalled();
   });
 });
