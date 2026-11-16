@@ -46,6 +46,8 @@ export class RoomStyler {
   private fade = 1;
   private readonly from = { alpha: 0, color: new THREE.Color(), glow: 0, glowColor: new THREE.Color(), weather: 0 };
   private readonly random = Math.random;
+  /** Scratch for the per-frame colour fades: the headset loop allocates nothing. */
+  private readonly toColor = new THREE.Color();
 
   constructor() {
     this.group.name = "xr_room";
@@ -142,7 +144,7 @@ export class RoomStyler {
 
     this.veil.position.copy(head);
     this.veil.material.opacity = THREE.MathUtils.lerp(this.from.alpha, theme.veil.alpha, t);
-    this.veil.material.color.copy(this.from.color).lerp(new THREE.Color(theme.veil.color), t);
+    this.veil.material.color.copy(this.from.color).lerp(this.toColor.setHex(theme.veil.color), t);
     this.veil.visible = this.veil.material.opacity > 0.002;
 
     if (board) {
@@ -151,7 +153,7 @@ export class RoomStyler {
       this.glow.rotation.y = tableYaw;
       this.glow.scale.setScalar(board.half * 2 * 1.9);
       this.glow.material.opacity = THREE.MathUtils.lerp(this.from.glow, theme.glow.intensity, t);
-      this.glow.material.color.copy(this.from.glowColor).lerp(new THREE.Color(theme.glow.color), t);
+      this.glow.material.color.copy(this.from.glowColor).lerp(this.toColor.setHex(theme.glow.color), t);
     } else {
       this.glow.visible = false;
     }
