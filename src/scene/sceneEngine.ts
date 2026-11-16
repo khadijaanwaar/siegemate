@@ -1148,6 +1148,8 @@ export class SceneEngine {
   /** Holds the shader programs of a fight's throwaway materials (see programKeeper.ts). */
   private keeper!: ProgramKeeper;
   private keeperSeeded = false;
+  /** Surfaces of figures a rebuild took off the table, disposed once the new ones are compiled. */
+  private retiredSurfaces: THREE.Material[] = [];
   private keeperTick = 0;
   private lastFpsReport = 0;
 
@@ -1453,9 +1455,15 @@ export class SceneEngine {
     // The fight's stand-ins were compiled with everything else: their
     // programs now live for the session.
     this.keeper.noteSeeds();
+    this.disposeRetiredSurfaces();
     void compiled.then(() => {
       if (this.tableWarmth === "compiling") this.tableWarmth = "warm";
     });
+  }
+
+  private disposeRetiredSurfaces(): void {
+    for (const surface of this.retiredSurfaces) surface.dispose();
+    this.retiredSurfaces = [];
   }
 
   /** Back to the 2D hall exactly as it was. */
@@ -1463,6 +1471,7 @@ export class SceneEngine {
     const rig = this.table;
     const restore = this.tableRestore;
     if (!rig || !restore) return;
+    this.disposeRetiredSurfaces();
     this.table = null;
     this.tableRestore = null;
     this.unwatchSession?.();
@@ -2014,12 +2023,20 @@ export class SceneEngine {
     // cannot re-register the figure it is carrying once its awaits resolve.
     this.boardRevision += 1;
     this.rebuildPending = false;
-    for (const piece of this.pieces.values()) piece.dispose();
     // Figures mid-march, mid-strike or mid-death are not in `pieces` — without
-    // this they would stay in the scene forever as a frozen double of the figure
-    // the rebuild puts back on their square.
-    for (const piece of this.motion) piece.dispose();
-    for (const piece of this.captured) piece.dispose();
+    // the motion set they would stay in the scene forever as a frozen double of
+    // the figure the rebuild puts back on their square.
+    const old = [...this.pieces.values(), ...this.motion, ...this.captured];
+    for (const piece of old) {
+      const surfaces = piece.detach();
+      // A surface's programs die with the last material using them. On the
+      // table the old surfaces are kept until the next headset frame has
+      // compiled the new figures (warmTablePrograms), or a new game would
+      // compile every figure again, fade variants included, mid-session.
+      if (this.table) this.retiredSurfaces.push(...surfaces);
+      else for (const surface of surfaces) surface.dispose();
+    }
+    if (this.table) this.tableWarmth = "cold";
     this.pieces.clear();
     this.motion.clear();
     this.hoveredPiece = null;
@@ -5952,6 +5969,7 @@ export class SceneEngine {
     this.captured = [];
     this.effects.dispose();
     this.keeper.dispose();
+    this.disposeRetiredSurfaces();
     this.alarm.dispose();
     this.spellLights.dispose();
     disposeStrikeAssets();

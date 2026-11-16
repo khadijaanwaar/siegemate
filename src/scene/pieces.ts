@@ -1576,19 +1576,27 @@ export class PieceView {
   }
 
   dispose(): void {
+    for (const material of this.detach()) material.dispose();
+  }
+
+  /**
+   * Takes the figure off the board and lets go of everything but its surfaces
+   * (body and arms), which are handed back for the caller to dispose. On the
+   * table a rebuild keeps them until the new figures are compiled, because a
+   * surface's programs die with the last material using them (see
+   * SceneEngine.rebuildPieces).
+   */
+  detach(): THREE.Material[] {
     if (this.mixer) {
       this.mixer.stopAllAction();
       this.mixer.uncacheRoot(this.mixer.getRoot() as THREE.Object3D);
       this.mixer = null;
     }
     this.actions.clear();
-    for (const material of this.materials) material.dispose();
+    // Weapon geometry is shared across the army; only the arms' materials are ours.
+    const surfaces: THREE.Material[] = [...this.materials, ...(this.arms?.materials ?? [])];
     this.materials = [];
-    if (this.arms) {
-      // Weapon geometry is shared across the army; only the materials are ours.
-      for (const material of this.arms.materials) material.dispose();
-      this.arms = null;
-    }
+    this.arms = null;
     // The marks' layers are shared by the board; only this figure's entries go.
     this.marks.remove(this.glow);
     this.marks.remove(this.shadow);
@@ -1599,6 +1607,7 @@ export class PieceView {
     this.token = null;
     this.container.removeFromParent();
     this.container.clear();
+    return surfaces;
   }
 }
 
