@@ -32,6 +32,7 @@ import { listDrawables, sceneBreakdown } from "./sceneStats";
 import { IdleScheduler } from "./idleScheduler";
 import { LightBlendPass } from "./lightBlend";
 import type { TableRig } from "../xr/tableRig";
+import { isTableXrSupported } from "../xr/session";
 import { AMMUNITION, type AmmoKind } from "./ammunition";
 import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
@@ -4421,7 +4422,13 @@ export class SceneEngine {
     this.introSkipped = false;
     this.interactive = false;
     this.controls.enabled = false;
-    this.postfx.setCinematic(true, 7);
+
+    // In a headset's browser the point of the visit is "Play on your table",
+    // and the menu (with that button) waits for the fly-in: land on the
+    // playing shot at once. A browser slow to answer gets the fly-in.
+    const headset = await Promise.race([isTableXrSupported(), wait(0.5).then(() => false)]);
+    if (this.disposed) return;
+    if (!headset) this.postfx.setCinematic(true, 7);
 
     // The fly-in is a performance and keeps its authored path, but the shot it
     // lands on is the one the player will play from — so that one is solved for
@@ -4429,6 +4436,14 @@ export class SceneEngine {
     this.framedShot = CAMERA_SHOTS.white;
     const rest = this.framingFor(CAMERA_SHOTS.white);
     this.adoptFraming(rest);
+    if (headset) {
+      this.camera.position.copy(rest.position);
+      this.controls.target.copy(rest.target);
+      this.introPlaying = false;
+      this.interactive = true;
+      this.controls.enabled = true;
+      return;
+    }
     const path: CameraShot[] = [
       { position: new THREE.Vector3(13.5, 2.1, 12.5), target: new THREE.Vector3(5, 3.2, 3.5) },
       { position: new THREE.Vector3(8.5, 2.4, 10.5), target: new THREE.Vector3(0, 1.4, 0) },
