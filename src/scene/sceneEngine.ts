@@ -1026,6 +1026,8 @@ export class SceneEngine {
    * (see {@link warmTablePrograms}).
    */
   private tableWarmth: "cold" | "compiling" | "warm" = "cold";
+  /** The battleground changed on the table, where the reflection probe is not rebuilt. */
+  private environmentStale = false;
   /** Stops listening to the headset session's visibility (the mixer follows it). */
   private unwatchSession: (() => void) | null = null;
   private running = false;
@@ -1418,7 +1420,9 @@ export class SceneEngine {
     this.controls.enabled = true;
     this.controls.autoRotate = restore.autoRotate;
     this.idle.setBuckets(QUALITY_SETTINGS[this.preset].idleUpdateEvery);
-    this.refreshMaterials();
+    // The battleground changed on the table: its probe was held back until now.
+    if (this.environmentStale) this.applyEnvironment();
+    else this.refreshMaterials();
     this.handleResize();
   }
 
@@ -1819,6 +1823,7 @@ export class SceneEngine {
    * the single most likely cause of an all-black scene.
    */
   private applyEnvironment(): void {
+    this.environmentStale = false;
     const look = ARENA_LOOKS[this.arena];
     const previous = this.environmentMap;
     this.environmentMap = null;
@@ -5397,6 +5402,14 @@ export class SceneEngine {
       this.applyTacticalAtmosphere();
     }
 
+    if (this.table) {
+      // Mid-session, a new reflection probe (a PMREM bake) and a material
+      // refresh would stall the headset for a moment the player feels. The
+      // table keeps the probe it has; the hall gets the new one on the way back.
+      this.environmentStale = true;
+      audio.prefetchScore(nextArenaOf(theme));
+      return;
+    }
     this.applyEnvironment();
   }
 
