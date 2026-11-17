@@ -1,6 +1,6 @@
 # Quest readiness, sharing and submission (Nov 16–18)
 
-Deadline: **Tue Nov 18 2026, 12:00 PT (20:00 UTC)**. Freeze the build at 08:00 PT. Rollback point: `d5597c4`, live
+Deadline: **Tue Nov 18 2026, 12:00 PT (20:00 UTC)**. Freeze the build at 08:00 PT. Rollback point: `4350869` (deployment fb8dfba6; earlier `d5597c4`), live
 at https://siegemate.pages.dev. Baseline: 181 unit tests green.
 
 No headset is available, so everything below is verified in the IWER emulator only. **Emulator-green is not
@@ -96,3 +96,9 @@ during a capture, promote a pawn, recenter with the Meta button, quit through th
   emulator), C (sharing), D (film harness, drafts of shots a–g) and E (README/Devpost) merged. Crest-through-card fix,
   MIT licence. Full suite green on main (unit 261; e2e offline, update, replay, xr-play, xr-controllers, xr-share,
   xr-perf, perf-check). **Deployed 4350869** to https://siegemate.pages.dev (deployment fb8dfba6). Still emulator-only.
+- 2026-11-17 (PT): film-2 fast-forwarded into main (cut levelled to -14 LUFS / -1 dBTP; offline shot fails requests
+  fast). A shot-i render hung for 23 h on the offline engine load and held the GPU lock; it was stopped, and shot i now
+  plays one exchange online before the network goes. Narration generated with Fish Audio: 25 lines, 63.2 s of speech,
+  retimed in `tests/video/cut.json` against the shots' events. Live site re-checked: build `4350869`, unchanged app
+  code on main, unit 261 green, so no redeploy. Owner steps in `docs/submission/handoff.md`. Final 1080p60 cut in
+  progress.
