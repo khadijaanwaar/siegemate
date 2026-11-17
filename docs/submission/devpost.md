@@ -193,7 +193,7 @@ typescript, webxr, three.js, super-three, meta-quest, hand-tracking, passthrough
 | Field | Value |
 |---|---|
 | Play in the headset (judge link) | `https://siegemate.pages.dev` (open in the Meta Quest browser) |
-| Demo video (public YouTube or Vimeo) | **[PLACEHOLDER: video URL]** |
+| Demo video (public YouTube or Vimeo) | **[PLACEHOLDER: video URL; title and description in `handoff.md`]** |
 | Source code | **[PLACEHOLDER: repository URL, if it is made public]** |
 
 ## For judges: two-minute path
@@ -243,14 +243,17 @@ New in the window, all committed from Nov 13 to Nov 16 2026:
 - Meta VR Start membership before submitting, and the Devpost registration.
 - The Devpost form's real fields and limits, including whether it asks for a target launch date or a "future of VR"
   answer (`plain/future-of-vr.txt` is ready in case).
-- Video rules: length, emulator footage allowed, public on YouTube or Vimeo, and whether a TTS narrator is fine. The
-  film is emulator capture and is labelled so.
+- Video rules: the competition research (`research/01-rules.md`, second hand) says under 3 minutes, real device or
+  emulator footage, public on YouTube or Vimeo, and warns against AI-generated video. The film is emulator capture,
+  labelled so on every frame; its narrator is a synthetic voice (Fish Audio), which the suggested YouTube description in
+  `handoff.md` states. Confirm on the rules page that a TTS narrator is fine.
 - Assets carried over from the earlier game (figures, clips, music, sound effects): if any were made with AI tools,
   check the rules on AI-generated content and the tools' terms.
 - Licence: MIT (decided Nov 16), in `LICENSE`.
 - Repository URL and video URL (placeholders above).
 - That the live site matches main at the freeze. Last deploy: `4350869` (Nov 16, Cloudflare deployment fb8dfba6),
-  with the share QR, promotion card, height controls and Lane B fixes.
+  with the share QR, promotion card, height controls and Lane B fixes. Re-checked Nov 17 11:50 PT: the live bundle
+  carries build `4350869`, and no app file has changed on main since (only the film harness and docs).
 - Whether Web Share or the clipboard work in the Quest Browser 2D page. The headset share path is the QR code; the
   phone and desktop path is tested in Chrome only.
 - That judges play on Quest 3 or 3S. Nothing has been run on any Quest; frame rate on a device is unknown.
