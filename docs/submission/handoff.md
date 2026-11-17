@@ -20,9 +20,11 @@ planned before the freeze.
 ## Only you can do these
 
 1. **Upload the film** to YouTube (or Vimeo) as **Public**. The rules ask for under 3 minutes; it runs about 1 minute 40.
-   Suggested title and description are below.
+   Suggested title and description are below. Watch it once with sound first: format and loudness were measured
+   and a frame per line was checked, but no one has listened to the whole film.
 2. **Paste the video URL** into Devpost and into `devpost.md` ("Try it").
-3. **Source code field:** make the repository public and paste its URL, or leave the field empty.
+3. **Source code field:** make the repository public and paste its URL, or leave the field empty. The repository has
+   no remote yet: every commit is local only, so publishing it means creating one and pushing `main` first.
 4. **Fill the Devpost form** from `docs/submission/devpost.md`. The plain-text boxes are in
    `docs/submission/plain/`; the gallery is `docs/submission/gallery/01..08` with captions in `CAPTIONS.md`.
    Pick Track **Gaming** and Division **Adapted / Significantly Updated**.
