@@ -5,6 +5,10 @@ photographed room behind passthrough). Voice: a warm female narrator, Fish Audio
 at the start of a sentence, at most two per line. Pauses are not written in: gaps are cut in the edit. Pace about 145
 words a minute; the script is 198 spoken words, about 82 seconds of speech, so the film runs about 110 s with the gaps.
 
+**As cut (Nov 17):** the voice came out at 63.2 s of speech and the film at 1:41. The beat times below are the
+plan; the real placement of every line is `tests/video/cut.json` (in Beat 5 the weather line plays over the storm,
+before the dusk line).
+
 Every shot carries the persistent corner label **"Emulator capture · simulated room"** (bottom left, the whole film).
 Never say or show anything about a real headset or frame rates on a device.
 

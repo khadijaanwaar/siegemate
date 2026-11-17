@@ -42,7 +42,10 @@ export default defineShot({
     mark("tap", { button: "Play on your table" });
     await wait(120);
     ctx.cursorPress(false);
+    // The window fades out before the session starts: its last photograph is then still the menu, not the
+    // page gone transparent for passthrough.
     ctx.hideWindow(450);
+    await wait(450);
     await game.enterFromMenu();
     mark("mixed-reality");
     // The room, then a look down to the table: the reticle finds it within reach.

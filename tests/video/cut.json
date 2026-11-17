@@ -6,7 +6,7 @@
     { "shot": "a", "caption": "Open siegemate.pages.dev · Pinch to place",
       "lines": [{ "id": "b1-1", "at": 0.3 }, { "id": "b1-2", "at": 3.75 }, { "id": "b1-3", "at": 7.6 }] },
     { "shot": "b", "caption": "Pinch a figure · let go on a lit square",
-      "lines": [{ "id": "b2-1", "at": 0.9 }, { "id": "b2-2", "at": 3.4 }, { "id": "b2-3", "at": 6.7 }, { "id": "b2-4", "at": 9.0 }] },
+      "lines": [{ "id": "b2-1", "at": 0.4 }, { "id": "b2-2", "at": 2.75 }, { "id": "b2-3", "at": 5.85 }, { "id": "b2-4", "at": 7.95 }] },
     { "shot": "c", "from": 1.5, "caption": "Three armies: Ivory Kingdom · Sun Empire · Grande Armée",
       "lines": [{ "id": "b3-1", "at": 0.3 }, { "id": "b3-2", "at": 2.4 }, { "id": "b3-3", "at": 5.15 }] },
     { "shot": "d", "from": 1.0, "to": 8.5, "caption": "Poke to crown",

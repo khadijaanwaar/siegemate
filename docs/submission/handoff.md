@@ -14,7 +14,7 @@ planned before the freeze.
 - Still emulator-only: nothing has been run on a Quest.
 - Film: emulator footage with Fish Audio narration (voice "Avery"). The final 1080p60 cut is rendered:
   `/Users/inventionsbyhamid/RailsProjects/hackathons/chess/siegemate-film/siegemate-1080p60.mp4`
-  (1:41, 1920x1080 at 60 fps, H.264 with AAC 48 kHz stereo, 156 MB, -14 LUFS integrated). It is outside the repo; the
+  (1:41, 1920x1080 at 60 fps, H.264 with AAC 48 kHz stereo, 155 MB, -14 LUFS integrated). It is outside the repo; the
   worktree's `film-out/` copy is gitignored.
 
 ## Only you can do these
