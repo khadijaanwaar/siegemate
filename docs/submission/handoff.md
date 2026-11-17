@@ -12,12 +12,14 @@ planned before the freeze.
 - Unit tests on main: 261 passed. The last full e2e run (offline, update, replay, xr-play, xr-controllers, xr-share,
   xr-perf, perf-check) was green on Nov 16 on the same app code.
 - Still emulator-only: nothing has been run on a Quest.
-- Film: emulator footage with Fish Audio narration (voice "Avery"). The final 1080p60 cut is being rendered:
-  **[path and length go here when the render lands]**.
+- Film: emulator footage with Fish Audio narration (voice "Avery"). The final 1080p60 cut is rendered:
+  `/Users/inventionsbyhamid/RailsProjects/hackathons/chess/siegemate-film/siegemate-1080p60.mp4`
+  (1:41, 1920x1080 at 60 fps, H.264 with AAC 48 kHz stereo, 156 MB, -14 LUFS integrated). It is outside the repo; the
+  worktree's `film-out/` copy is gitignored.
 
 ## Only you can do these
 
-1. **Upload the film** to YouTube (or Vimeo) as **Public**. The rules ask for under 3 minutes; it runs about 1.5.
+1. **Upload the film** to YouTube (or Vimeo) as **Public**. The rules ask for under 3 minutes; it runs about 1 minute 40.
    Suggested title and description are below.
 2. **Paste the video URL** into Devpost and into `devpost.md` ("Try it").
 3. **Source code field:** make the repository public and paste its URL, or leave the field empty.

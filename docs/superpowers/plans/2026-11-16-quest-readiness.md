@@ -97,8 +97,14 @@ during a capture, promote a pawn, recenter with the Meta button, quit through th
   MIT licence. Full suite green on main (unit 261; e2e offline, update, replay, xr-play, xr-controllers, xr-share,
   xr-perf, perf-check). **Deployed 4350869** to https://siegemate.pages.dev (deployment fb8dfba6). Still emulator-only.
 - 2026-11-17 (PT): film-2 fast-forwarded into main (cut levelled to -14 LUFS / -1 dBTP; offline shot fails requests
-  fast). A shot-i render hung for 23 h on the offline engine load and held the GPU lock; it was stopped, and shot i now
+  fast). A shot-i render hung for 23 h and held the GPU lock (cause found later: the shot awaited `__xr.move`, whose
+  promise waits on frames the paused film clock never gives); it was stopped, and shot i now
   plays one exchange online before the network goes. Narration generated with Fish Audio: 25 lines, 63.2 s of speech,
   retimed in `tests/video/cut.json` against the shots' events. Live site re-checked: build `4350869`, unchanged app
   code on main, unit 261 green, so no redeploy. Owner steps in `docs/submission/handoff.md`. Final 1080p60 cut in
   progress.
+- 2026-11-17 (PT, later): every narration line kept (shot a holds 3 s longer for "Two armies stand up…", shot b
+  carries slower). Shot i fires its moves with `void`, plays 1. e4 online so the lazily loaded engine worker exists,
+  then cuts the network for Nf3; the computer answers Nxe4 offline. All nine shots rendered final (46 min).
+  **Final film: 1:41, 1920x1080 at 60 fps, -14.0 LUFS, under -3 dBTP**, copied to
+  `../siegemate-film/siegemate-1080p60.mp4` (outside the repo). Left for the owner: upload, URLs, Devpost form.
