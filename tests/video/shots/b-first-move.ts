@@ -7,7 +7,7 @@ import { BOARD_VIEW, close, EYE, REACH_R, ROOM_VIEW, up } from "../lib/stage.ts"
 export default defineShot({
   name: "b-first-move",
   description: "Pinch the e2 pawn, carry the order to e4 and let go: the pawn marches, the computer answers e7-e5.",
-  seconds: 11,
+  seconds: 13,
   replies: ["e7e5"],
   async setup({ camera, game }) {
     camera.cut(ROOM_VIEW);
@@ -28,7 +28,7 @@ export default defineShot({
     mark("pinch", { square: "e2" });
     await wait(250);
     // Carry the order up the board: the command line follows the hand to e4.
-    await right.arc(up(e4, 0.025), 1100, 0.035);
+    await right.arc(up(e4, 0.025), 1500, 0.035);
     await wait(200);
     await right.open(220);
     mark("release", { square: "e4" });
@@ -40,6 +40,6 @@ export default defineShot({
     await game.settle(8000);
     camera.move({ from: EYE, at: BOARD_VIEW.at, hfovDeg: 80 }, 1800);
     await wait(1800);
-    await until(10);
+    await until(12);
   },
 });

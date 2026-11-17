@@ -11,7 +11,7 @@ const WINDOW_AT: [number, number, number] = [0, 1.06, -1.45];
 export default defineShot({
   name: "a-place",
   description: "The page in a browser window, tap Play on your table; the room appears, the reticle finds the coffee table, a pinch sets the board down.",
-  seconds: 11,
+  seconds: 13,
   async setup({ wait }) {
     // The menu, on screen and settled: fonts, the hall behind it, and the intro's camera fly-in
     // (about 7 s; Lane B may drop it when mixed reality is offered).
@@ -61,6 +61,7 @@ export default defineShot({
     await right.open(200);
     right.moveTo([0.42, 0.45, -0.1], 900);
     camera.move({ from: EYE, at: BOARD_VIEW.at, hfovDeg: 80 }, 2200);
-    await wait(2600);
+    // Held on the standing armies for the narration's third line.
+    await wait(5600);
   },
 });
