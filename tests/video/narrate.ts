@@ -1,4 +1,5 @@
-// The film's narration: every spoken line of docs/submission/narration.md, one Fish Audio request each, saved as
+// The film's narration: every spoken line of the narration script (notes/narration.md in the submission folder, outside
+// this repository; NARRATION_MD overrides the path), one Fish Audio request each, saved as
 // film-out/narration/<beat>-<line>.wav with a receipt, and film-out/narration/lines.json (text and measured length).
 //
 //   VIDEO_ENV_FILE=path/to/fish.env node --no-warnings tests/video/narrate.ts [--dry]
@@ -15,9 +16,10 @@ import path from "node:path";
 const VOICE = { referenceId: "ba875f2fb2ea4a4e9b175821014984b6", backend: "s2.1-pro-free" };
 const OUT = path.resolve(process.env.FILM_OUT ?? "film-out", "narration");
 const dry = process.argv.includes("--dry");
+const NARRATION_MD = process.env.NARRATION_MD || "../../2026-11-meta-vr-start-developer-competition/submissions/siegemate/notes/narration.md";
 
 /** The script's spoken lines, by beat, in order. */
-export function narrationLines(md = fs.readFileSync("docs/submission/narration.md", "utf8")): Array<{ id: string; beat: number; text: string }> {
+export function narrationLines(md = fs.readFileSync(NARRATION_MD, "utf8")): Array<{ id: string; beat: number; text: string }> {
   const lines: Array<{ id: string; beat: number; text: string }> = [];
   let beat = 0;
   let inNarration = false;

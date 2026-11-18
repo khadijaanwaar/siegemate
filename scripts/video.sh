@@ -13,7 +13,7 @@
 #   --no-build    reuse film-out/.build (the last build) instead of building the game again
 #   --no-rough    skip the rough cut of the shots
 #   --stills a,b  render README / Devpost stills instead (tests/video/stills/<name>.ts, or "all"):
-#                 one drawn frame each, saved as JPEG where the still says (docs/images/readme, docs/submission/gallery)
+#                 one drawn frame each, saved as JPEG where the still says (docs/images/readme, the submission folder's gallery/)
 #   --list        print the shots and what each one waits on
 #
 # Output in film-out/<W>x<H>-<fps>/ (gitignored): <shot>.mp4, <shot>.json (events with times, for

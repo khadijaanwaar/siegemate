@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- the page hooks (window.__xr, __iwer) are untyped test globals */
-// Shared set-up for the README and Devpost stills (docs/images/readme/SHOTLIST.md,
-// docs/submission/gallery/CAPTIONS.md). Each still is a shot whose last frame is saved.
+// Shared set-up for the README and Devpost stills (docs/images/readme/SHOTLIST.md, and the Devpost gallery's
+// CAPTIONS.md in the submission folder, which lives outside this repository: SUBMISSION_DIR, by default
+// ../../2026-11-meta-vr-start-developer-competition/submissions/siegemate from the repo root). Each still is a shot
+// whose last frame is saved.
 import type { View } from "../lib/camera.ts";
 import type { P3 } from "../lib/hands.ts";
 import type { ShotContext } from "../lib/shot.ts";
@@ -9,7 +11,8 @@ import { BOARD_VIEW, EYE, ROOM_VIEW } from "../lib/stage.ts";
 /** README: drawn at 2560x1440, Lanczos to 1920x1080, JPEG q85 (SHOTLIST.md). */
 export const README = (name: string) => ({ file: `docs/images/readme/${name}.jpg`, size: [2560, 1440] as [number, number], out: [1920, 1080] as [number, number], quality: 85 });
 /** Devpost gallery: 2160x1440 (3:2), JPEG q88 (CAPTIONS.md). */
-export const GALLERY = (name: string) => ({ file: `docs/submission/gallery/${name}.jpg`, size: [2160, 1440] as [number, number], out: [2160, 1440] as [number, number], quality: 88 });
+export const SUBMISSION_DIR = process.env.SUBMISSION_DIR || "../../2026-11-meta-vr-start-developer-competition/submissions/siegemate";
+export const GALLERY = (name: string) => ({ file: `${SUBMISSION_DIR}/gallery/${name}.jpg`, size: [2160, 1440] as [number, number], out: [2160, 1440] as [number, number], quality: 88 });
 
 /** Default board size (1.15x), the chosen armies, coach hints done. */
 export const setupStorage = (w = "ivory", b = "sun", onboarded = true): Record<string, string> => ({

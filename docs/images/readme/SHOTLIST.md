@@ -5,7 +5,7 @@ room behind passthrough). Every file is **16:9, 1920×1080, JPEG quality 85**, s
 captured in the emulator and carries the small corner label **"Emulator capture · simulated room"** (bottom left,
 Inter 600, 22 px, cream at 70% on a dark pill), so no still is mistaken for device footage.
 
-These framings are for the README only. The Devpost gallery (`docs/submission/gallery/CAPTIONS.md`) uses different
+These framings are for the README only. The Devpost gallery (kept with the submission, outside this repository) uses different
 3:2 framings so the two sets never repeat each other.
 
 Common setup unless a shot says otherwise: seated eye about 1.20 m above the floor, board placed on the simulated
