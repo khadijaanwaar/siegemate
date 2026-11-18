@@ -14,12 +14,12 @@ planned before the freeze.
 - Still emulator-only: nothing has been run on a Quest.
 - Film: emulator footage with Fish Audio narration (voice "Avery"). The final 1080p60 cut is rendered:
   `/Users/inventionsbyhamid/RailsProjects/hackathons/chess/siegemate-film/siegemate-1080p60.mp4`
-  (1:41, 1920x1080 at 60 fps, H.264 with AAC 48 kHz stereo, 155 MB, -14 LUFS integrated). It is outside the repo; the
+  (2:23, 1920x1080 at 60 fps, H.264 with AAC 48 kHz stereo, 221 MB, -14 LUFS integrated, true peak -2 dBTP). It is outside the repo; the
   worktree's `film-out/` copy is gitignored.
 
 ## Only you can do these
 
-1. **Upload the film** to YouTube (or Vimeo) as **Public**. The rules ask for under 3 minutes; it runs about 1 minute 40.
+1. **Upload the film** to YouTube (or Vimeo) as **Public**. The rules ask for under 3 minutes; it runs about 2 minutes 20.
    Suggested title and description are below. Watch it once with sound first: format and loudness were measured
    and a frame per line was checked, but no one has listened to the whole film.
 2. **Paste the video URL** into Devpost and into `devpost.md` ("Try it").

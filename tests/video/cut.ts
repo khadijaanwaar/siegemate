@@ -34,6 +34,8 @@ interface Segment {
   caption?: string;
   tags?: Array<{ text: string; at: number; until?: number }>;
   lines?: Line[];
+  /** Lift (or cut) this segment's own game sound, dB: a stretch with no voice over it sits low otherwise. */
+  gainDb?: number;
 }
 interface Cut {
   segments: Segment[];
@@ -168,7 +170,7 @@ const mix = path.join(work, "mix.wav");
   placed.forEach((seg, i) => {
     if (seg.clip && hasAudio(seg.clip)) inputs.push("-ss", (seg.from ?? 0).toFixed(3), "-t", seg.length.toFixed(3), "-i", seg.clip);
     else inputs.push("-f", "lavfi", "-t", seg.length.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo");
-    chains.push(`[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=duration=${seg.length.toFixed(3)},apad=whole_dur=${seg.length.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
+    chains.push(`[${i}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=duration=${seg.length.toFixed(3)},apad=whole_dur=${seg.length.toFixed(3)},asetpts=PTS-STARTPTS${seg.gainDb ? `,volume=${seg.gainDb}dB` : ""}[a${i}]`);
   });
   chains.push(`${placed.map((_, i) => `[a${i}]`).join("")}concat=n=${placed.length}:v=0:a=1,volume=${cut.bedDb}dB[bed]`);
   const known = fs.existsSync(path.join(narrationDir, "lines.json")) ? (JSON.parse(fs.readFileSync(path.join(narrationDir, "lines.json"), "utf8")) as Array<{ id: string; text: string }>) : [];
@@ -213,7 +215,7 @@ const loudness = (file: string) => {
 const leveled = path.join(work, "leveled.wav");
 let gain = -14 - loudness(mix).i;
 for (let round = 0; round < 5; round++) {
-  ff(["-i", mix, "-af", `volume=${gain.toFixed(2)}dB,aresample=192000,alimiter=limit=0.8:attack=2:release=60:level=disabled,aresample=48000`, "-c:a", "pcm_s24le", leveled]);
+  ff(["-i", mix, "-af", `volume=${gain.toFixed(2)}dB,aresample=192000,alimiter=limit=0.7:attack=2:release=60:level=disabled,aresample=48000`, "-c:a", "pcm_s24le", leveled]);
   const got = loudness(leveled).i;
   if (Math.abs(got + 14) < 0.3) break;
   gain += -14 - got;

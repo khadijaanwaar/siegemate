@@ -108,3 +108,7 @@ during a capture, promote a pawn, recenter with the Meta button, quit through th
   then cuts the network for Nf3; the computer answers Nxe4 offline. All nine shots rendered final (46 min).
   **Final film: 1:41, 1920x1080 at 60 fps, -14.0 LUFS, under -3 dBTP**, copied to
   `../siegemate-film/siegemate-1080p60.mp4` (outside the repo). Left for the owner: upload, URLs, Devpost form.
+- 2026-11-17 (PT, evening): owner feedback. The name is now spoken "Siege mate" (b1-1, b8-3; take E, picked by ear).
+  New shot k (no table: after the 8 s search the board settles at seat height on its slab; line b1-4) and shot j (33 s
+  of play, game sound only: exd5 Nxd5, Nxf7 Kxf7, Qf3+ Ke6). cut.json takes a per-segment `gainDb` (j +8 dB).
+  **Final film: 2:23, 1080p60, -14 LUFS**, same path as before.

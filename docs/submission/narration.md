@@ -5,7 +5,8 @@ photographed room behind passthrough). Voice: a warm female narrator, Fish Audio
 at the start of a sentence, at most two per line. Pauses are not written in: gaps are cut in the edit. Pace about 145
 words a minute; the script is 198 spoken words, about 82 seconds of speech, so the film runs about 110 s with the gaps.
 
-**As cut (Nov 17):** the voice came out at 63.2 s of speech and the film at 1:41. The beat times below are the
+**As cut (Nov 17):** 26 lines, 68.5 s of speech; the film runs 2:23 with a no-table shot after Beat 1 and a
+33 s stretch of play with game sound only (the Fried Liver: four fights and a check) after Beat 3. The beat times below are the
 plan; the real placement of every line is `tests/video/cut.json` (in Beat 5 the weather line plays over the storm,
 before the dusk line).
 
@@ -22,11 +23,16 @@ Times are targets for the cut; adjust to the footage.
 table; a pinch; the board appears and the armies stand up in their idle poses.
 
 **Narration:**
-- [warm] This is Siegemate. Chess, on your own table.
+- [warm] This is Siege mate. Chess, on your own table.
 - Open it in the Quest browser, look at a table, and pinch.
 - [hushed] Two armies stand up on the wood, waiting for orders.
+- [warm] No table? Give it a few seconds, and the board waits right in front of you, at seat height.
 
 **On-screen caption:** Open siegemate.pages.dev · Pinch to place
+
+b1-4 goes with its own shot (no table in view: after 8 s the board settles at seat height on its stand-in slab,
+`src/xr/placement.ts` FALLBACK_AFTER_S). Do not name buses or planes: a moving vehicle depends on the headset's Travel
+Mode, which nobody has tested with this game.
 
 ## Beat 2: pinch and carry e2 to e4, the computer replies (0:14 to 0:30)
 
@@ -109,7 +115,7 @@ end card: Siegemate wordmark, siegemate.pages.dev.
 **Narration:**
 - [warm] After your first visit, it plays the computer offline.
 - No install. Just the link.
-- [confident] Siegemate. Living armies, on your table.
+- [confident] Siege mate. Living armies, on your table.
 
 **On-screen caption:** Plays offline after the first visit · siegemate.pages.dev
 
@@ -118,6 +124,8 @@ end card: Siegemate wordmark, siegemate.pages.dev.
 ## Notes for the edit
 
 - Word count: 198 spoken words (tags not counted).
+- The name is written "Siege mate" in the spoken lines on purpose: as one word the voice ran it together. The owner
+  picked this take (E) by ear on Nov 17; captions and the end card still read Siegemate.
 - The film's game sound sits under the voice and ducks while she speaks; fights and the conquest motif get the gaps.
 - Beat 8's offline shot is the 2D page in desktop Chrome, as tested by `tests/e2e/offline.mjs`; do not caption it as a
   headset.
