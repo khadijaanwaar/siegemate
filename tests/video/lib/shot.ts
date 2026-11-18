@@ -32,7 +32,7 @@ export interface Shot<S = unknown> {
    * A still instead of a clip: only the frame after play() ends is drawn and saved, rendered at `size` and
    * scaled (Lanczos) to `out`, JPEG at `quality` (stepped down if the file would pass `maxKb`).
    */
-  still?: { file: string; size: [number, number]; out: [number, number]; quality: number; maxKb?: number };
+  still?: { file: string; size: [number, number]; out: [number, number]; quality: number; maxKb?: number; format?: "jpeg" | "png" };
   seed?: number;
   /** Corner label (default EMULATOR_LABEL; null for none). */
   label?: string | null;

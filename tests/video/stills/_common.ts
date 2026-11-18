@@ -14,6 +14,10 @@ export const README = (name: string) => ({ file: `docs/images/readme/${name}.jpg
 export const SUBMISSION_DIR = process.env.SUBMISSION_DIR || "../../2026-11-meta-vr-start-developer-competition/submissions/siegemate";
 export const GALLERY = (name: string) => ({ file: `${SUBMISSION_DIR}/gallery/${name}.jpg`, size: [2160, 1440] as [number, number], out: [2160, 1440] as [number, number], quality: 88 });
 
+/** Devpost card sources: 2560x1440 PNG, lossless, no corner label (the card's caption strip carries it). CARD_DIR
+ * redirects them (trial renders). */
+export const CARD = (name: string) => ({ file: `${process.env.CARD_DIR || `${SUBMISSION_DIR}/gallery-src`}/${name}.png`, size: [2560, 1440] as [number, number], out: [2560, 1440] as [number, number], quality: 100, format: "png" as const });
+
 /** Default board size (1.15x), the chosen armies, coach hints done. */
 export const setupStorage = (w = "ivory", b = "sun", onboarded = true): Record<string, string> => ({
   "mr-chess:board-size": "1.15",

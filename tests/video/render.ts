@@ -142,6 +142,16 @@ if (still) {
     const { default: sharp } = await import("sharp");
     const out = path.resolve(still.file);
     fs.mkdirSync(path.dirname(out), { recursive: true });
+    if (still.format === "png") {
+      // Lossless, for a card drawn on top later (no size cap).
+      const png = await sharp(last).resize(still.out[0], still.out[1], { kernel: "lanczos3" }).png({ compressionLevel: 9 }).toBuffer();
+      fs.writeFileSync(out, png);
+      log(`${shot.name}: ${still.out[0]}x${still.out[1]} PNG, ${Math.round(png.length / 1024)} KB -> ${still.file}`);
+      if (b.errors.length) log(`${shot.name}: page errors: ${b.errors.slice(0, 3).join(" | ")}`);
+      clearInterval(heartbeat);
+      await b.browser.close().catch(() => undefined);
+      process.exit(0);
+    }
     const maxBytes = (still.maxKb ?? 600) * 1024;
     let q = still.quality;
     let jpg: Buffer;
