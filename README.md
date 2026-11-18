@@ -4,6 +4,12 @@ Siegemate puts two living armies on your real table. In the Meta Quest browser, 
 
 ![A Sun Empire warrior striking an Ivory footsoldier on a real wooden table](docs/images/readme/hero.jpg)
 
+## Watch the demo
+
+[![Siegemate demo video on YouTube](https://i.ytimg.com/vi/xQz0r19Uolk/maxresdefault.jpg)](https://youtu.be/xQz0r19Uolk)
+
+**[Watch on YouTube](https://youtu.be/xQz0r19Uolk)** (2:23). Emulator capture: the game running in Meta's WebXR emulator (IWER) over a photographed room, narrated by a synthetic voice.
+
 ## Play now
 
 **https://siegemate.pages.dev**, in the Meta Quest browser. Sit at a table; hands or Touch controllers both work.
