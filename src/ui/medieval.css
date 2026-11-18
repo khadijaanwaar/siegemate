@@ -1755,6 +1755,11 @@
   margin-top: 1.25rem;
 }
 
+/* The headset's "More options": quiet, the full width of the column. */
+.mc-menu-more {
+  width: 100%;
+}
+
 .mc-menu-record {
   order: 2;
   flex: none;

@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react";
-import { Clapperboard, Eye, Glasses, Play, Settings as SettingsIcon, Swords, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Clapperboard, Eye, Glasses, Play, Settings as SettingsIcon, Swords, Users } from "lucide-react";
 
 import { APP_NAME, TAGLINE } from "../brand";
 import type { PlayerStats } from "../core/stats";
@@ -77,6 +77,16 @@ export function MainMenu({
   const [demoBlack, setDemoBlack] = useState<Difficulty>("hard");
   const [demoSpeed, setDemoSpeed] = useState<number>(1);
   const [demoLoop, setDemoLoop] = useState<boolean>(true);
+  // In a headset the menu is the way onto the table, and the table game is always against the computer with no clock;
+  // its strength, side and battleground can be changed again from the headset menu. So the menu first shows only
+  // what the table game uses (strength, side, armies), and the rest (Friend, Watch, the clock, the battleground)
+  // waits behind "More options" for the game on screen.
+  const [more, setMore] = useState(false);
+  const compact = Boolean(onStartMixedReality) && !more;
+  const toggleMore = (): void => {
+    if (more) setTab("ai");
+    setMore(!more);
+  };
 
   const config = (): MatchConfig => ({
     mode: tab,
@@ -130,7 +140,7 @@ export function MainMenu({
                 </>
               ) : (
                 <>
-                  <Play size={20} aria-hidden="true" /> Play
+                  <Play size={20} aria-hidden="true" /> {onStartMixedReality ? "Play on screen" : "Play"}
                 </>
               )}
             </button>
@@ -141,22 +151,24 @@ export function MainMenu({
         </div>
 
         <div className="mc-menu-setup">
-          <div className="mc-seg" role="group" aria-label="Game mode">
-            {MODES.map((entry) => (
-              <button
-                key={entry.mode}
-                type="button"
-                className="mc-seg-btn"
-                data-active={tab === entry.mode}
-                aria-pressed={tab === entry.mode}
-                aria-label={entry.name}
-                onClick={() => setTab(entry.mode)}
-              >
-                {entry.icon}
-                <span>{entry.label}</span>
-              </button>
-            ))}
-          </div>
+          {compact ? null : (
+            <div className="mc-seg" role="group" aria-label="Game mode">
+              {MODES.map((entry) => (
+                <button
+                  key={entry.mode}
+                  type="button"
+                  className="mc-seg-btn"
+                  data-active={tab === entry.mode}
+                  aria-pressed={tab === entry.mode}
+                  aria-label={entry.name}
+                  onClick={() => setTab(entry.mode)}
+                >
+                  {entry.icon}
+                  <span>{entry.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="mc-menu-scroll mc-scroll mc-scroll-shade">
             {tab === "ai" ? (
@@ -244,7 +256,7 @@ export function MainMenu({
                   </span>
                 </button>
               </>
-            ) : (
+            ) : compact ? null : (
               <OptionGroup label="Clock" columns={4}>
                 {CLOCKS.map((option) => (
                   <Option
@@ -259,7 +271,19 @@ export function MainMenu({
               </OptionGroup>
             )}
 
-            <MusterSection choice={muster} onChange={onMuster} />
+            <MusterSection choice={muster} onChange={onMuster} ground={!compact} />
+
+            {onStartMixedReality ? (
+              <button
+                type="button"
+                className="mc-btn mc-btn-ghost mc-btn-md mc-menu-more"
+                aria-expanded={more}
+                onClick={toggleMore}
+              >
+                {more ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+                {more ? "Fewer options" : "More options"}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

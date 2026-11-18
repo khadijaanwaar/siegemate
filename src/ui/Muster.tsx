@@ -93,9 +93,12 @@ export function ArenaPicker({ chosen, onChoose }: { chosen: ArenaTheme; onChoose
 export function MusterSection({
   choice,
   onChange,
+  ground = true,
 }: {
   choice: MusterChoice;
   onChange: (choice: MusterChoice) => void;
+  /** Show the battleground picker (the headset's first menu leaves it to the headset menu). */
+  ground?: boolean;
 }) {
   const groundId = useId();
   return (
@@ -116,12 +119,14 @@ export function MusterSection({
         />
       </div>
 
-      <div className="mc-field" role="group" aria-labelledby={groundId}>
-        <p id={groundId} className="mc-label">
-          Battleground
-        </p>
-        <ArenaPicker chosen={choice.arena} onChoose={(arena) => onChange({ ...choice, arena })} />
-      </div>
+      {ground ? (
+        <div className="mc-field" role="group" aria-labelledby={groundId}>
+          <p id={groundId} className="mc-label">
+            Battleground
+          </p>
+          <ArenaPicker chosen={choice.arena} onChoose={(arena) => onChange({ ...choice, arena })} />
+        </div>
+      ) : null}
     </>
   );
 }
